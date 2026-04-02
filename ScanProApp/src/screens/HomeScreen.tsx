@@ -156,7 +156,7 @@ export default function HomeScreen() {
           style={[styles.btn, styles.btnPrimary]}
           onPress={() => navigation.navigate('Camera')}
         >
-          <Text style={styles.btnPrimaryText}>＋ 新增掃描頁</Text>
+          <Text style={styles.btnPrimaryText}>+ 新增掃描頁</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -223,7 +223,7 @@ const styles = StyleSheet.create({
   },
   btnPrimary: { backgroundColor: '#2563eb' },
   btnPrimaryText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  btnSecondary: { backgroundColor: '#f3f4f6' },
+  btnSecondary: { backgroundColor: '#e5e7eb', borderWidth: 1, borderColor: '#d1d5db' },
   btnSecondaryText: { color: '#374151', fontSize: 14, fontWeight: '600' },
   btnSuccess: { backgroundColor: '#22c55e' },
   btnSuccessText: { color: '#fff', fontSize: 14, fontWeight: '600' },

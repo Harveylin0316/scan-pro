@@ -15,11 +15,11 @@ import ImageProcessor, { ImageProcessorRef } from '../components/ImageProcessor'
 import { useScanStore, Corner, Filter } from '../store/scanStore';
 import { RootStackParamList } from '../../App';
 
-type Nav  = NativeStackNavigationProp<RootStackParamList, 'Edit'>;
+type Nav   = NativeStackNavigationProp<RootStackParamList, 'Edit'>;
 type Route = RouteProp<RootStackParamList, 'Edit'>;
 
 const SCREEN_W = Dimensions.get('window').width;
-const HANDLE_R = 18; // handle radius
+const HANDLE_R = 18;
 
 type ImageLayout = {
   containerW: number;
@@ -63,18 +63,44 @@ export default function EditScreen() {
 
   // Image metadata
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
-  const [layout, setLayout] = useState<ImageLayout | null>(null);
+  const [containerDims, setContainerDims] = useState<{ w: number; h: number } | null>(null);
+
+  // FIX #2: Derive layout from imgSize + containerDims (works regardless of load order)
+  const layout = useMemo<ImageLayout | null>(() => {
+    if (!imgSize || !containerDims) return null;
+    const scale = Math.min(containerDims.w / imgSize.w, containerDims.h / imgSize.h);
+    const dW = imgSize.w * scale;
+    const dH = imgSize.h * scale;
+    return {
+      containerW: containerDims.w, containerH: containerDims.h,
+      displayW: dW, displayH: dH,
+      offsetX: (containerDims.w - dW) / 2,
+      offsetY: (containerDims.h - dH) / 2,
+    };
+  }, [imgSize, containerDims]);
 
   // Editing state
-  const [corners, setCorners]     = useState<Corner[]>(existingPage?.corners ?? DEFAULT_CORNERS);
-  const [filter, setFilter]       = useState<Filter>(existingPage?.filter ?? 'scan');
+  const [corners, setCorners]       = useState<Corner[]>(existingPage?.corners ?? DEFAULT_CORNERS);
+  const [filter, setFilter]         = useState<Filter>(existingPage?.filter ?? 'scan');
   const [brightness, setBrightness] = useState(existingPage?.brightness ?? 0);
-  const [contrast, setContrast]   = useState(existingPage?.contrast ?? 0);
+  const [contrast, setContrast]     = useState(existingPage?.contrast ?? 0);
 
   // UI state
-  const [detecting, setDetecting] = useState(!existingPage);
-  const [processing, setProcessing] = useState(false);
+  const [detecting, setDetecting]       = useState(!existingPage);
+  const [processing, setProcessing]     = useState(false);
   const [processorReady, setProcessorReady] = useState(false);
+
+  // FIX #5: Cache base64 to avoid double read
+  const imageBase64Ref = useRef<string | null>(null);
+  const readImageBase64 = useCallback(async () => {
+    if (imageBase64Ref.current) return imageBase64Ref.current;
+    const raw = await FileSystem.readAsStringAsync(uri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const dataUrl = `data:image/jpeg;base64,${raw}`;
+    imageBase64Ref.current = dataUrl;
+    return dataUrl;
+  }, [uri]);
 
   // ── Load image size ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -85,72 +111,61 @@ export default function EditScreen() {
     );
   }, [uri]);
 
-  // ── Auto-detect corners when processor ready ─────────────────────────────────
+  // ── Auto-detect corners ──────────────────────────────────────────────────────
   const runDetect = useCallback(async () => {
     if (!processorReady || existingPage) return;
     try {
       setDetecting(true);
-      const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      const dataUrl = `data:image/jpeg;base64,${base64}`;
+      const dataUrl = await readImageBase64();
       const result = await processorRef.current!.detect(dataUrl);
       setCorners(result.corners);
     } catch {
-      // keep default corners on failure
+      // keep default corners
     } finally {
       setDetecting(false);
     }
-  }, [processorReady, existingPage, uri]);
+  }, [processorReady, existingPage, readImageBase64]);
 
   useEffect(() => { runDetect(); }, [runDetect]);
 
-  // ── Compute image layout inside container ────────────────────────────────────
+  // ── Container layout ─────────────────────────────────────────────────────────
   const onContainerLayout = useCallback((e: any) => {
-    if (!imgSize) return;
-    const { width: cW, height: cH } = e.nativeEvent.layout;
-    const scale = Math.min(cW / imgSize.w, cH / imgSize.h);
-    const dW = imgSize.w * scale;
-    const dH = imgSize.h * scale;
-    setLayout({
-      containerW: cW, containerH: cH,
-      displayW: dW, displayH: dH,
-      offsetX: (cW - dW) / 2,
-      offsetY: (cH - dH) / 2,
-    });
-  }, [imgSize]);
+    const { width, height } = e.nativeEvent.layout;
+    setContainerDims({ w: width, h: height });
+  }, []);
 
-  // ── Pan responders for corner handles ────────────────────────────────────────
+  // ── FIX #1: PanResponders — capture start corner via ref, avoid double-accumulation
+  const cornersRef = useRef(corners);
+  cornersRef.current = corners;
+
   const panResponders = useMemo(() => {
-    return corners.map((_, idx) =>
-      PanResponder.create({
+    return [0, 1, 2, 3].map((idx) => {
+      let startCorner: Corner = { x: 0, y: 0 };
+      return PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: () => {
+          startCorner = cornersRef.current[idx]; // snapshot at drag start
+        },
         onPanResponderMove: (_, gs) => {
           if (!layout) return;
+          const ref = normalizedToScreen(startCorner, layout);
           setCorners((prev) => {
             const next = [...prev];
-            const ref = normalizedToScreen(prev[idx], layout);
-            const newX = ref.x + gs.dx;
-            const newY = ref.y + gs.dy;
-            next[idx] = screenToNormalized(newX, newY, layout);
+            next[idx] = screenToNormalized(ref.x + gs.dx, ref.y + gs.dy, layout);
             return next;
           });
         },
-      })
-    );
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, corners.length]);
+      });
+    });
+  }, [layout]);
 
   // ── Confirm ──────────────────────────────────────────────────────────────────
   const handleConfirm = useCallback(async () => {
     if (!processorReady) return;
     try {
       setProcessing(true);
-      const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      const dataUrl = `data:image/jpeg;base64,${base64}`;
+      const dataUrl = await readImageBase64();
       const result = await processorRef.current!.process(
         dataUrl, corners, filter, brightness, contrast
       );
@@ -176,14 +191,13 @@ export default function EditScreen() {
     } finally {
       setProcessing(false);
     }
-  }, [processorReady, uri, corners, filter, brightness, contrast, existingPage, addPage, updatePage, navigation]);
+  }, [processorReady, readImageBase64, corners, filter, brightness, contrast, existingPage, addPage, updatePage, navigation, uri]);
 
-  // ── Reset corners ─────────────────────────────────────────────────────────────
   const handleResetCorners = useCallback(() => {
     setCorners(DEFAULT_CORNERS);
   }, []);
 
-  // ── Render corner handles ─────────────────────────────────────────────────────
+  // ── Render corner handles ────────────────────────────────────────────────────
   const renderHandles = () => {
     if (!layout) return null;
     return corners.map((c, idx) => {
@@ -198,31 +212,32 @@ export default function EditScreen() {
     });
   };
 
-  // ── Render crop lines ─────────────────────────────────────────────────────────
+  // ── FIX #4: Render crop lines without transformOrigin ────────────────────────
   const renderLines = () => {
     if (!layout) return null;
     const pts = corners.map((c) => normalizedToScreen(c, layout));
-    const lines = [
-      { x1: pts[0].x, y1: pts[0].y, x2: pts[1].x, y2: pts[1].y },
-      { x1: pts[1].x, y1: pts[1].y, x2: pts[2].x, y2: pts[2].y },
-      { x1: pts[2].x, y1: pts[2].y, x2: pts[3].x, y2: pts[3].y },
-      { x1: pts[3].x, y1: pts[3].y, x2: pts[0].x, y2: pts[0].y },
+    const pairs = [
+      [pts[0], pts[1]], [pts[1], pts[2]], [pts[2], pts[3]], [pts[3], pts[0]],
     ];
-    return lines.map((l, i) => {
-      const dx = l.x2 - l.x1;
-      const dy = l.y2 - l.y1;
+    return pairs.map(([a, b], i) => {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
       const len = Math.hypot(dx, dy);
-      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+      const angle = Math.atan2(dy, dx);
+      // Position the center of the line at the midpoint of the two corners.
+      // The line has width = len and height = 2. Default rotation pivot = center.
+      const midX = (a.x + b.x) / 2;
+      const midY = (a.y + b.y) / 2;
       return (
         <View
           key={i}
           style={[
             styles.cropLine,
             {
-              left: l.x1,
-              top: l.y1,
+              left: midX - len / 2,
+              top: midY - 1,
               width: len,
-              transform: [{ rotate: `${angle}deg` }],
+              transform: [{ rotate: `${angle * 180 / Math.PI}deg` }],
             },
           ]}
         />
@@ -231,19 +246,15 @@ export default function EditScreen() {
   };
 
   const FILTERS: { key: Filter; label: string }[] = [
-    { key: 'scan', label: '📄 掃描' },
-    { key: 'bw',   label: '⬛ 黑白' },
-    { key: 'gray', label: '🔘 灰階' },
-    { key: 'color',label: '🎨 原色' },
+    { key: 'scan',  label: '📄 掃描' },
+    { key: 'bw',    label: '⬛ 黑白' },
+    { key: 'gray',  label: '🔘 灰階' },
+    { key: 'color', label: '🎨 原色' },
   ];
 
   return (
     <SafeAreaView style={styles.safe}>
-      {/* Hidden processor WebView */}
-      <ImageProcessor
-        ref={processorRef}
-        onReady={() => setProcessorReady(true)}
-      />
+      <ImageProcessor ref={processorRef} onReady={() => setProcessorReady(true)} />
 
       {/* Header */}
       <View style={styles.header}>
@@ -260,23 +271,18 @@ export default function EditScreen() {
         >
           {processing
             ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.confirmBtnText}>✓ 確認</Text>
-          }
+            : <Text style={styles.confirmBtnText}>✓ 確認</Text>}
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         {/* Image + crop overlay */}
         <View style={styles.imageContainer} onLayout={onContainerLayout}>
-          <Image
-            source={{ uri }}
-            style={styles.image}
-            resizeMode="contain"
-          />
+          <Image source={{ uri }} style={styles.image} resizeMode="contain" />
           {layout && (
             <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
               {renderLines()}
-              {(detecting || !layout) ? null : renderHandles()}
+              {detecting ? null : renderHandles()}
             </View>
           )}
           {detecting && (
@@ -320,11 +326,8 @@ export default function EditScreen() {
           </View>
           <Slider
             minimumValue={-50} maximumValue={50} step={1}
-            value={brightness}
-            onValueChange={setBrightness}
-            minimumTrackTintColor="#2563eb"
-            maximumTrackTintColor="#e5e7eb"
-            thumbTintColor="#2563eb"
+            value={brightness} onValueChange={setBrightness}
+            minimumTrackTintColor="#2563eb" maximumTrackTintColor="#e5e7eb" thumbTintColor="#2563eb"
           />
           <View style={[styles.sliderRow, { marginTop: 12 }]}>
             <Text style={styles.sliderLabel}>對比度</Text>
@@ -332,11 +335,8 @@ export default function EditScreen() {
           </View>
           <Slider
             minimumValue={-50} maximumValue={50} step={1}
-            value={contrast}
-            onValueChange={setContrast}
-            minimumTrackTintColor="#2563eb"
-            maximumTrackTintColor="#e5e7eb"
-            thumbTintColor="#2563eb"
+            value={contrast} onValueChange={setContrast}
+            minimumTrackTintColor="#2563eb" maximumTrackTintColor="#e5e7eb" thumbTintColor="#2563eb"
           />
         </View>
       </ScrollView>
@@ -383,7 +383,6 @@ const styles = StyleSheet.create({
   cropLine: {
     position: 'absolute',
     height: 2, backgroundColor: '#2563eb',
-    transformOrigin: 'left center',
     opacity: 0.8,
   },
 

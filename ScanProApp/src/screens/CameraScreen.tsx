@@ -104,7 +104,7 @@ export default function CameraScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#000' },
+  safe: { flex: 1, backgroundColor: '#f9fafb' },
   container: { flex: 1, backgroundColor: '#000' },
   camera: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 20 },
