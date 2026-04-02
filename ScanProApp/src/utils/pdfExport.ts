@@ -10,8 +10,9 @@ export async function exportToPdf(pages: ScanPage[]): Promise<void> {
 
   const imagesHtml = validPages
     .map(
-      (p) => `
-      <div style="page-break-after:always;margin:0;padding:0;width:100%;height:100vh;
+      (p, i) => `
+      <div style="page-break-after:${i < validPages.length - 1 ? 'always' : 'auto'};
+                  margin:0;padding:0;width:100%;height:100vh;
                   display:flex;align-items:center;justify-content:center;background:#fff;">
         <img src="${p.processedBase64}"
              style="max-width:100%;max-height:100%;object-fit:contain;display:block;">
