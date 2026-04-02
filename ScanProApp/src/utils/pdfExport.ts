@@ -22,11 +22,10 @@ export async function exportToPdf(pages: ScanPage[]): Promise<void> {
       img {
         display: block;
         width: 100%;
-        height: 100vh;
-        object-fit: contain;
-        page-break-after: auto;
+        height: auto;
         page-break-inside: avoid;
       }
+      img + img { page-break-before: always; }
     </style>
     </head><body>${imagesHtml}</body></html>`;
 
