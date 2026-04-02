@@ -1,0 +1,1560 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ScanPro - 高清文件掃描</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script>
+  // Lazy-load heic2any only when needed (avoids file:// CDN blocking)
+  window._heic2anyReady = null;
+  window._loadHeic2any = function() {
+    if (window._heic2anyReady) return window._heic2anyReady;
+    window._heic2anyReady = new Promise(function(resolve) {
+      if (typeof heic2any === 'function') { resolve(true); return; }
+      var primary = document.createElement('script');
+      primary.src = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+      primary.onload = function() { resolve(true); };
+      primary.onerror = function() {
+        var fallback = document.createElement('script');
+        fallback.src = 'https://unpkg.com/heic2any@0.0.4/dist/heic2any.min.js';
+        fallback.onload = function() { resolve(true); };
+        fallback.onerror = function() { resolve(false); };
+        document.head.appendChild(fallback);
+      };
+      document.head.appendChild(primary);
+    });
+    return window._heic2anyReady;
+  };
+</script>
+<style>
+  :root {
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --primary-light: #eff6ff;
+    --danger: #ef4444;
+    --success: #22c55e;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-300: #d1d5db;
+    --gray-400: #9ca3af;
+    --gray-500: #6b7280;
+    --gray-600: #4b5563;
+    --gray-700: #374151;
+    --gray-800: #1f2937;
+    --gray-900: #111827;
+    --radius: 12px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--gray-50);
+    color: var(--gray-800);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .header {
+    background: white;
+    border-bottom: 1px solid var(--gray-200);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--gray-900);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .header h1 .icon { font-size: 24px; }
+  .page-count {
+    font-size: 14px;
+    color: var(--gray-500);
+    background: var(--gray-100);
+    padding: 4px 12px;
+    border-radius: 20px;
+  }
+
+  .app-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 20px;
+    min-height: calc(100vh - 60px);
+  }
+
+  @media (max-width: 768px) {
+    .app-container {
+      grid-template-columns: 1fr;
+      padding: 12px;
+    }
+  }
+
+  .card {
+    background: white;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--gray-200);
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--gray-100);
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--gray-700);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .card-body { padding: 20px; }
+
+  .capture-area {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .drop-zone {
+    border: 2px dashed var(--gray-300);
+    border-radius: var(--radius);
+    padding: 48px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--gray-50);
+  }
+  .drop-zone:hover, .drop-zone.drag-over {
+    border-color: var(--primary);
+    background: var(--primary-light);
+  }
+  .drop-zone .icon { font-size: 48px; margin-bottom: 12px; }
+  .drop-zone .title { font-size: 16px; font-weight: 600; color: var(--gray-700); margin-bottom: 4px; }
+  .drop-zone .subtitle { font-size: 13px; color: var(--gray-400); }
+
+  .btn-row { display: flex; gap: 10px; }
+
+  .btn {
+    flex: 1;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: none;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-secondary { background: var(--gray-100); color: var(--gray-700); }
+  .btn-secondary:hover { background: var(--gray-200); }
+  .btn-danger { background: var(--danger); color: white; }
+  .btn-danger:hover { opacity: 0.9; }
+  .btn-success { background: var(--success); color: white; }
+  .btn-success:hover { opacity: 0.9; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn-icon {
+    width: 32px; height: 32px; flex: none;
+    padding: 0; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .preview-container {
+    position: relative;
+    background: var(--gray-900);
+    border-radius: var(--radius);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+  }
+  /* Wrapper keeps preview + crop overlay perfectly aligned */
+  .preview-wrapper {
+    position: relative;
+    display: inline-block;
+    line-height: 0;
+  }
+  .preview-wrapper canvas#previewCanvas {
+    display: block;
+    max-width: 100%;
+    max-height: 500px;
+  }
+  .crop-overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  .crop-overlay canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: all;
+    cursor: crosshair;
+  }
+
+  .filter-controls { display: flex; gap: 8px; flex-wrap: wrap; }
+  .filter-btn {
+    padding: 8px 16px;
+    border-radius: 20px;
+    border: 1px solid var(--gray-200);
+    background: white;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: var(--gray-600);
+  }
+  .filter-btn:hover { border-color: var(--primary); color: var(--primary); }
+  .filter-btn.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+  }
+
+  .slider-group { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+  .slider-label { display: flex; justify-content: space-between; font-size: 13px; color: var(--gray-600); }
+  input[type="range"] { width: 100%; accent-color: var(--primary); }
+
+  .pages-sidebar { display: flex; flex-direction: column; }
+  .pages-list {
+    flex: 1;
+    overflow-y: auto;
+    max-height: calc(100vh - 200px);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .page-thumb {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: var(--gray-100);
+  }
+  .page-thumb:hover { border-color: var(--gray-300); }
+  .page-thumb.active { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(37,99,235,0.2); }
+  .page-thumb img {
+    width: 100%;
+    aspect-ratio: 3/4;
+    object-fit: cover;
+    display: block;
+  }
+  .page-thumb .page-num {
+    position: absolute;
+    top: 6px; left: 6px;
+    background: rgba(0,0,0,0.6);
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+  .page-thumb .page-actions {
+    position: absolute;
+    top: 6px; right: 6px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .page-thumb:hover .page-actions { opacity: 1; }
+  .page-action-btn {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    border: none;
+    background: rgba(0,0,0,0.6);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+  }
+  .page-action-btn:hover { background: rgba(0,0,0,0.8); }
+  .page-action-btn.delete:hover { background: var(--danger); }
+
+  .empty-pages {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--gray-400);
+    font-size: 13px;
+  }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal {
+    background: white;
+    border-radius: var(--radius);
+    width: 100%;
+    max-width: 640px;
+    overflow: hidden;
+  }
+  .modal-header {
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--gray-100);
+  }
+  .modal-header h3 { font-size: 16px; font-weight: 600; }
+  .modal-body { padding: 0; }
+  .modal-body video { width: 100%; display: block; background: black; }
+  .modal-footer {
+    padding: 16px 20px;
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    border-top: 1px solid var(--gray-100);
+  }
+
+  .hidden { display: none !important; }
+
+  .processing-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.9);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    z-index: 50;
+  }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid var(--gray-200);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--gray-800);
+    color: white;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    z-index: 300;
+    transition: transform 0.3s ease;
+    box-shadow: var(--shadow-lg);
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  .page-thumb.dragging { opacity: 0.4; }
+  .page-thumb.drag-over-item { border-color: var(--primary); }
+
+  .export-section {
+    padding: 12px;
+    border-top: 1px solid var(--gray-100);
+  }
+
+  /* Progress bar for PDF export */
+  .progress-bar {
+    width: 100%;
+    height: 4px;
+    background: var(--gray-200);
+    border-radius: 2px;
+    margin-top: 8px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 2px;
+    transition: width 0.2s;
+    width: 0%;
+  }
+
+  /* Mobile touch improvements */
+  @media (max-width: 640px) {
+    .btn { padding: 14px 18px; font-size: 15px; min-height: 48px; }
+    .page-action-btn { width: 32px; height: 32px; font-size: 14px; }
+    .filter-btn { padding: 10px 18px; font-size: 14px; }
+    .drop-zone { padding: 32px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span class="icon">📄</span> ScanPro</h1>
+  <span class="page-count" id="pageCount">0 頁</span>
+</div>
+
+<div class="app-container">
+  <div style="display:flex;flex-direction:column;gap:16px;">
+    <div class="card">
+      <div class="card-header">📸 新增掃描頁</div>
+      <div class="card-body capture-area">
+        <div class="drop-zone" id="dropZone">
+          <div class="icon">📁</div>
+          <div class="title">拖放圖片到這裡</div>
+          <div class="subtitle">或點擊選擇檔案（支援 JPG、PNG、iPhone HEIC，單檔最大 15MB）</div>
+        </div>
+        <input type="file" id="fileInput" accept="image/*,.heic,.heif" multiple class="hidden">
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btnCamera">📷 拍照</button>
+          <button class="btn btn-secondary" id="btnUpload">📂 選擇檔案</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" id="editCard" style="display:none;">
+      <div class="card-header">
+        <span>✏️ 編輯掃描頁 <span id="editingPageNum"></span></span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-sm btn-secondary" id="btnResetCrop">重設裁切</button>
+          <button class="btn btn-sm btn-primary" id="btnApplyEdit">✓ 確認</button>
+        </div>
+      </div>
+      <div class="card-body" style="padding:12px;">
+        <div class="preview-container" id="previewContainer">
+          <div class="preview-wrapper" id="previewWrapper">
+            <canvas id="previewCanvas"></canvas>
+            <div class="crop-overlay" id="cropOverlay">
+              <canvas id="cropCanvas"></canvas>
+            </div>
+          </div>
+          <div class="processing-overlay hidden" id="processingOverlay">
+            <div class="spinner"></div>
+            <div style="font-size:14px;color:var(--gray-500);">處理中...</div>
+          </div>
+        </div>
+
+        <div style="margin-top:16px;">
+          <div style="font-size:13px;font-weight:600;color:var(--gray-600);margin-bottom:8px;">掃描模式</div>
+          <div class="filter-controls">
+            <button class="filter-btn active" data-filter="scan">📄 掃描</button>
+            <button class="filter-btn" data-filter="bw">⬛ 黑白</button>
+            <button class="filter-btn" data-filter="gray">🔘 灰階</button>
+            <button class="filter-btn" data-filter="color">🎨 原色</button>
+          </div>
+        </div>
+
+        <div class="slider-group">
+          <div class="slider-label"><span>亮度</span><span id="brightnessVal">0</span></div>
+          <input type="range" id="brightness" min="-50" max="50" value="0">
+          <div class="slider-label"><span>對比度</span><span id="contrastVal">0</span></div>
+          <input type="range" id="contrast" min="-50" max="50" value="0">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card pages-sidebar">
+    <div class="card-header">
+      📑 掃描頁面
+      <button class="btn btn-sm btn-secondary" id="btnClearAll">全部清除</button>
+    </div>
+    <div class="pages-list" id="pagesList">
+      <div class="empty-pages" id="emptyPages">
+        還沒有掃描頁<br>拍照或上傳圖片開始
+      </div>
+    </div>
+    <div class="export-section">
+      <button class="btn btn-success" id="btnExportPdf" disabled style="width:100%;">
+        📥 輸出 PDF
+      </button>
+      <div class="progress-bar hidden" id="exportProgress">
+        <div class="progress-bar-fill" id="exportProgressFill"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="cameraModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>📷 拍照掃描</h3>
+      <button class="btn btn-icon btn-secondary" id="btnCloseCamera">✕</button>
+    </div>
+    <div class="modal-body">
+      <video id="cameraVideo" autoplay playsinline></video>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="btnSwitchCamera">🔄 切換鏡頭</button>
+      <button class="btn btn-primary" id="btnCapture" style="min-width:120px;">📸 拍攝</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================
+// ScanPro v2 - 高清文件掃描 Web App
+// Fixes: memory leaks, adaptive edge detection,
+//        file size limits, touch UX, mobile share,
+//        orientation handling, progress feedback
+// ============================================
+
+const App = (() => {
+  // --- Constants ---
+  const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
+  const MAX_IMAGE_DIM = 3000; // Downscale images larger than this
+  const THUMB_QUALITY = 0.4;
+
+  // --- State ---
+  const state = {
+    pages: [],       // { id, originalImg, processedCanvas, corners, filter, brightness, contrast, thumbUrl }
+    activePageId: null,
+    cameraStream: null,
+    facingMode: 'environment',
+    isDragging: false,
+    dragCornerIdx: -1,
+    objectUrls: [],  // Track all object URLs for cleanup
+  };
+
+  // --- DOM refs ---
+  const $ = id => document.getElementById(id);
+  const el = {
+    dropZone: $('dropZone'),
+    fileInput: $('fileInput'),
+    btnCamera: $('btnCamera'),
+    btnUpload: $('btnUpload'),
+    editCard: $('editCard'),
+    editingPageNum: $('editingPageNum'),
+    previewContainer: $('previewContainer'),
+    previewCanvas: $('previewCanvas'),
+    cropCanvas: $('cropCanvas'),
+    cropOverlay: $('cropOverlay'),
+    processingOverlay: $('processingOverlay'),
+    btnResetCrop: $('btnResetCrop'),
+    btnApplyEdit: $('btnApplyEdit'),
+    brightness: $('brightness'),
+    contrast: $('contrast'),
+    brightnessVal: $('brightnessVal'),
+    contrastVal: $('contrastVal'),
+    pagesList: $('pagesList'),
+    emptyPages: $('emptyPages'),
+    pageCount: $('pageCount'),
+    btnExportPdf: $('btnExportPdf'),
+    btnClearAll: $('btnClearAll'),
+    cameraModal: $('cameraModal'),
+    cameraVideo: $('cameraVideo'),
+    btnCloseCamera: $('btnCloseCamera'),
+    btnSwitchCamera: $('btnSwitchCamera'),
+    btnCapture: $('btnCapture'),
+    toast: $('toast'),
+    exportProgress: $('exportProgress'),
+    exportProgressFill: $('exportProgressFill'),
+  };
+
+  // --- Utils ---
+  function generateId() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  let toastTimer = null;
+  function showToast(msg, duration = 2500) {
+    el.toast.textContent = msg;
+    el.toast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.toast.classList.remove('show'), duration);
+  }
+
+  function showProcessing(show) {
+    el.processingOverlay.classList.toggle('hidden', !show);
+  }
+
+  // FIX #1: Track and cleanup object URLs to prevent memory leaks
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        // Downscale if too large to prevent memory issues
+        if (img.width > MAX_IMAGE_DIM || img.height > MAX_IMAGE_DIM) {
+          const scale = MAX_IMAGE_DIM / Math.max(img.width, img.height);
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.width * scale);
+          c.height = Math.round(img.height * scale);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          const resized = new Image();
+          resized.onload = () => {
+            if (objectUrl) { URL.revokeObjectURL(objectUrl); }
+            resolve(resized);
+          };
+          resized.src = c.toDataURL('image/jpeg', 0.92);
+        } else {
+          if (objectUrl) { URL.revokeObjectURL(objectUrl); }
+          resolve(img);
+        }
+      };
+      img.onerror = () => {
+        if (objectUrl) { URL.revokeObjectURL(objectUrl); }
+        reject(new Error('Failed to load image'));
+      };
+      let objectUrl = null;
+      if (src instanceof Blob) {
+        objectUrl = URL.createObjectURL(src);
+        img.src = objectUrl;
+      } else {
+        img.src = src;
+      }
+    });
+  }
+
+  // --- Image Processing ---
+
+  // FIX #2: Adaptive edge detection with histogram equalization
+  function detectDocumentCorners(img) {
+    const cw = 400;
+    const scale = cw / img.width;
+    const ch = Math.round(img.height * scale);
+
+    const c = document.createElement('canvas');
+    c.width = cw; c.height = ch;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0, cw, ch);
+    const imageData = ctx.getImageData(0, 0, cw, ch);
+    const data = imageData.data;
+
+    // Grayscale conversion
+    const gray = new Uint8Array(cw * ch);
+    const hist = new Uint32Array(256);
+    for (let i = 0; i < gray.length; i++) {
+      const g = (data[i*4] * 0.299 + data[i*4+1] * 0.587 + data[i*4+2] * 0.114) | 0;
+      gray[i] = g;
+      hist[g]++;
+    }
+
+    // Histogram equalization for better contrast handling
+    const cdf = new Uint32Array(256);
+    cdf[0] = hist[0];
+    for (let i = 1; i < 256; i++) cdf[i] = cdf[i-1] + hist[i];
+    const cdfMin = cdf.find(v => v > 0) || 0;
+    const total = cw * ch;
+    for (let i = 0; i < gray.length; i++) {
+      gray[i] = Math.round(((cdf[gray[i]] - cdfMin) / (total - cdfMin)) * 255);
+    }
+
+    // Gaussian blur (3x3) to reduce noise
+    const blurred = new Uint8Array(cw * ch);
+    for (let y = 1; y < ch - 1; y++) {
+      for (let x = 1; x < cw - 1; x++) {
+        const idx = y * cw + x;
+        blurred[idx] = (
+          gray[idx-cw-1] + 2*gray[idx-cw] + gray[idx-cw+1] +
+          2*gray[idx-1] + 4*gray[idx] + 2*gray[idx+1] +
+          gray[idx+cw-1] + 2*gray[idx+cw] + gray[idx+cw+1]
+        ) / 16 | 0;
+      }
+    }
+
+    // Sobel edge detection
+    const edges = new Uint8Array(cw * ch);
+    for (let y = 1; y < ch - 1; y++) {
+      for (let x = 1; x < cw - 1; x++) {
+        const idx = y * cw + x;
+        const gx = -blurred[idx-cw-1] + blurred[idx-cw+1]
+                  -2*blurred[idx-1] + 2*blurred[idx+1]
+                  -blurred[idx+cw-1] + blurred[idx+cw+1];
+        const gy = -blurred[idx-cw-1] - 2*blurred[idx-cw] - blurred[idx-cw+1]
+                  +blurred[idx+cw-1] + 2*blurred[idx+cw] + blurred[idx+cw+1];
+        edges[idx] = Math.min(255, Math.sqrt(gx*gx + gy*gy) | 0);
+      }
+    }
+
+    // Adaptive threshold: use 70th percentile of edge magnitudes
+    const edgeSorted = Array.from(edges).filter(v => v > 10).sort((a, b) => a - b);
+    const threshold = edgeSorted.length > 100
+      ? Math.max(40, edgeSorted[Math.floor(edgeSorted.length * 0.6)])
+      : 50;
+
+    // Dilate edges to connect broken lines
+    const dilated = new Uint8Array(cw * ch);
+    for (let y = 1; y < ch - 1; y++) {
+      for (let x = 1; x < cw - 1; x++) {
+        const idx = y * cw + x;
+        if (edges[idx] > threshold ||
+            edges[idx-1] > threshold || edges[idx+1] > threshold ||
+            edges[idx-cw] > threshold || edges[idx+cw] > threshold) {
+          dilated[idx] = 255;
+        }
+      }
+    }
+
+    // Find bounding rectangle of edge pixels with margin
+    const margin = Math.round(cw * 0.06);
+    let topEdge = ch, bottomEdge = 0, leftEdge = cw, rightEdge = 0;
+    let edgeCount = 0;
+
+    for (let y = margin; y < ch - margin; y++) {
+      for (let x = margin; x < cw - margin; x++) {
+        if (dilated[y * cw + x]) {
+          if (y < topEdge) topEdge = y;
+          if (y > bottomEdge) bottomEdge = y;
+          if (x < leftEdge) leftEdge = x;
+          if (x > rightEdge) rightEdge = x;
+          edgeCount++;
+        }
+      }
+    }
+
+    // If detection failed, use 8% padding default
+    if (rightEdge - leftEdge < cw * 0.25 || bottomEdge - topEdge < ch * 0.25 || edgeCount < 100) {
+      const pad = 0.08;
+      return [
+        { x: pad, y: pad },
+        { x: 1 - pad, y: pad },
+        { x: 1 - pad, y: 1 - pad },
+        { x: pad, y: 1 - pad },
+      ];
+    }
+
+    // Refine corners by scanning edge density in quadrants
+    const cx = (leftEdge + rightEdge) / 2;
+    const cy = (topEdge + bottomEdge) / 2;
+
+    function findCorner(startX, startY, endX, endY, dirX, dirY) {
+      let bestX = startX, bestY = startY, bestScore = 0;
+      const step = 3;
+      for (let y = Math.min(startY, endY); y <= Math.max(startY, endY); y += step) {
+        for (let x = Math.min(startX, endX); x <= Math.max(startX, endX); x += step) {
+          if (x >= 0 && x < cw && y >= 0 && y < ch && dilated[y * cw + x]) {
+            const score = Math.abs(x - cx) + Math.abs(y - cy);
+            if (score > bestScore) {
+              bestScore = score;
+              bestX = x;
+              bestY = y;
+            }
+          }
+        }
+      }
+      return { x: bestX, y: bestY };
+    }
+
+    const tl = findCorner(leftEdge, topEdge, cx, cy, -1, -1);
+    const tr = findCorner(rightEdge, topEdge, cx, cy, 1, -1);
+    const br = findCorner(rightEdge, bottomEdge, cx, cy, 1, 1);
+    const bl = findCorner(leftEdge, bottomEdge, cx, cy, -1, 1);
+
+    const pad = cw * 0.015;
+    return [
+      { x: Math.max(0, (tl.x - pad)) / cw, y: Math.max(0, (tl.y - pad)) / ch },
+      { x: Math.min(cw, (tr.x + pad)) / cw, y: Math.max(0, (tr.y - pad)) / ch },
+      { x: Math.min(cw, (br.x + pad)) / cw, y: Math.min(ch, (br.y + pad)) / ch },
+      { x: Math.max(0, (bl.x - pad)) / cw, y: Math.min(ch, (bl.y + pad)) / ch },
+    ];
+  }
+
+  // FIX #3: Validate corners before perspective transform
+  function perspectiveTransform(img, corners) {
+    const sw = img.width, sh = img.height;
+
+    // Validate corners
+    for (const c of corners) {
+      if (typeof c.x !== 'number' || typeof c.y !== 'number' ||
+          isNaN(c.x) || isNaN(c.y)) {
+        // Invalid corners, return original as canvas
+        const fallback = document.createElement('canvas');
+        fallback.width = sw; fallback.height = sh;
+        fallback.getContext('2d').drawImage(img, 0, 0);
+        return fallback;
+      }
+    }
+
+    const pts = corners.map(c => ({
+      x: Math.max(0, Math.min(1, c.x)) * sw,
+      y: Math.max(0, Math.min(1, c.y)) * sh
+    }));
+
+    const widthTop = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+    const widthBot = Math.hypot(pts[2].x - pts[3].x, pts[2].y - pts[3].y);
+    const heightLeft = Math.hypot(pts[3].x - pts[0].x, pts[3].y - pts[0].y);
+    const heightRight = Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y);
+
+    const dw = Math.max(1, Math.round(Math.max(widthTop, widthBot)));
+    const dh = Math.max(1, Math.round(Math.max(heightLeft, heightRight)));
+
+    // Cap output size to prevent memory explosion
+    const maxDim = 2500;
+    const outScale = Math.min(1, maxDim / Math.max(dw, dh));
+    const ow = Math.round(dw * outScale);
+    const oh = Math.round(dh * outScale);
+
+    const srcCanvas = document.createElement('canvas');
+    srcCanvas.width = sw; srcCanvas.height = sh;
+    const srcCtx = srcCanvas.getContext('2d');
+    srcCtx.drawImage(img, 0, 0);
+    const srcData = srcCtx.getImageData(0, 0, sw, sh);
+
+    const dstCanvas = document.createElement('canvas');
+    dstCanvas.width = ow; dstCanvas.height = oh;
+    const dstCtx = dstCanvas.getContext('2d');
+    const dstData = dstCtx.createImageData(ow, oh);
+
+    for (let dy = 0; dy < oh; dy++) {
+      for (let dx = 0; dx < ow; dx++) {
+        const u = dx / (ow - 1 || 1);
+        const v = dy / (oh - 1 || 1);
+
+        const sx = (1-u)*(1-v)*pts[0].x + u*(1-v)*pts[1].x + u*v*pts[2].x + (1-u)*v*pts[3].x;
+        const sy = (1-u)*(1-v)*pts[0].y + u*(1-v)*pts[1].y + u*v*pts[2].y + (1-u)*v*pts[3].y;
+
+        // Bilinear sampling for better quality
+        const floorX = Math.floor(sx);
+        const floorY = Math.floor(sy);
+        const fracX = sx - floorX;
+        const fracY = sy - floorY;
+
+        if (floorX >= 0 && floorX < sw - 1 && floorY >= 0 && floorY < sh - 1) {
+          const di = (dy * ow + dx) * 4;
+          const i00 = (floorY * sw + floorX) * 4;
+          const i10 = i00 + 4;
+          const i01 = i00 + sw * 4;
+          const i11 = i01 + 4;
+
+          for (let c = 0; c < 3; c++) {
+            const v00 = srcData.data[i00+c];
+            const v10 = srcData.data[i10+c];
+            const v01 = srcData.data[i01+c];
+            const v11 = srcData.data[i11+c];
+            dstData.data[di+c] = (
+              v00 * (1-fracX) * (1-fracY) +
+              v10 * fracX * (1-fracY) +
+              v01 * (1-fracX) * fracY +
+              v11 * fracX * fracY
+            ) | 0;
+          }
+          dstData.data[di+3] = 255;
+        }
+      }
+    }
+
+    dstCtx.putImageData(dstData, 0, 0);
+    return dstCanvas;
+  }
+
+  function applyScanFilter(canvas, filter, brightness, contrast) {
+    const ctx = canvas.getContext('2d');
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    const bAdj = brightness * 2;
+    const cFactor = (259 * (contrast * 2.55 + 255)) / (255 * (259 - contrast * 2.55));
+
+    for (let i = 0; i < data.length; i += 4) {
+      let r = data[i], g = data[i+1], b = data[i+2];
+
+      r += bAdj; g += bAdj; b += bAdj;
+      r = cFactor * (r - 128) + 128;
+      g = cFactor * (g - 128) + 128;
+      b = cFactor * (b - 128) + 128;
+
+      switch(filter) {
+        case 'scan': {
+          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+          if (gray > 170) {
+            r = g = b = Math.min(255, gray + 50);
+          } else if (gray > 80) {
+            r *= 0.9; g *= 0.9; b *= 0.9;
+          } else {
+            r *= 0.75; g *= 0.75; b *= 0.75;
+          }
+          r = 1.4 * (r - 128) + 128;
+          g = 1.4 * (g - 128) + 128;
+          b = 1.4 * (b - 128) + 128;
+          break;
+        }
+        case 'bw': {
+          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+          // Otsu-like: use adaptive threshold
+          r = g = b = gray > 120 ? 255 : 0;
+          break;
+        }
+        case 'gray': {
+          const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+          r = g = b = gray;
+          break;
+        }
+        case 'color': break;
+      }
+
+      data[i] = Math.max(0, Math.min(255, r));
+      data[i+1] = Math.max(0, Math.min(255, g));
+      data[i+2] = Math.max(0, Math.min(255, b));
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+  }
+
+  async function processImage(img, corners, filter, brightness, contrast) {
+    let canvas = perspectiveTransform(img, corners);
+    canvas = applyScanFilter(canvas, filter, brightness, contrast);
+    return canvas;
+  }
+
+  // --- Page Management ---
+
+  // --- HEIC Support ---
+  // Strategy: try native browser HEIC support first (macOS Safari/Chrome),
+  // then fallback to heic2any library (Windows/Linux)
+  function isHeic(file) {
+    if (!file) return false;
+    const name = (file.name || '').toLowerCase();
+    const type = (file.type || '').toLowerCase();
+    return name.endsWith('.heic') || name.endsWith('.heif') ||
+           type === 'image/heic' || type === 'image/heif';
+  }
+
+  // Try loading HEIC natively via <img> (works on macOS)
+  function tryNativeHeicLoad(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      const timeout = setTimeout(() => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Native HEIC load timeout'));
+      }, 5000);
+      img.onload = () => {
+        clearTimeout(timeout);
+        URL.revokeObjectURL(url);
+        // Verify it actually decoded (width/height > 0)
+        if (img.width > 0 && img.height > 0) {
+          resolve(img);
+        } else {
+          reject(new Error('Native HEIC decode failed'));
+        }
+      };
+      img.onerror = () => {
+        clearTimeout(timeout);
+        URL.revokeObjectURL(url);
+        reject(new Error('Native HEIC not supported'));
+      };
+      img.src = url;
+    });
+  }
+
+  // Fallback: use heic2any library
+  async function convertHeicWithLibrary(file) {
+    showToast('正在載入 HEIC 轉換工具...', 5000);
+    const loaded = await window._loadHeic2any();
+    if (!loaded || typeof heic2any === 'undefined') {
+      throw new Error('HEIC 轉換庫載入失敗（可能因為離線或 file:// 協定限制）');
+    }
+    showToast('正在轉換 HEIC 格式...', 5000);
+    const blob = await heic2any({
+      blob: file,
+      toType: 'image/jpeg',
+      quality: 0.92,
+    });
+    return Array.isArray(blob) ? blob[0] : blob;
+  }
+
+  // File validation
+  function validateFile(file) {
+    const isImage = file.type.startsWith('image/');
+    const isHeicFile = isHeic(file);
+    if (!isImage && !isHeicFile) {
+      showToast('只支援圖片格式（JPG、PNG、HEIC）');
+      return false;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      showToast(`檔案太大（${(file.size/1024/1024).toFixed(1)}MB），上限 ${MAX_FILE_SIZE/1024/1024}MB`);
+      return false;
+    }
+    return true;
+  }
+
+  async function addPage(imgSrc) {
+    showProcessing(true);
+    // If HEIC: try native first → fallback to library
+    if (imgSrc instanceof File && isHeic(imgSrc)) {
+      try {
+        // Strategy 1: Native browser HEIC support (macOS Safari/Chrome)
+        const nativeImg = await tryNativeHeicLoad(imgSrc);
+        // Convert to standard format via canvas
+        const c = document.createElement('canvas');
+        c.width = nativeImg.width;
+        c.height = nativeImg.height;
+        c.getContext('2d').drawImage(nativeImg, 0, 0);
+        imgSrc = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
+        showToast('HEIC 已轉換');
+      } catch(nativeErr) {
+        console.log('Native HEIC failed, trying heic2any...', nativeErr.message);
+        try {
+          // Strategy 2: heic2any library (needs network)
+          imgSrc = await convertHeicWithLibrary(imgSrc);
+        } catch(libErr) {
+          console.error('All HEIC conversion methods failed:', libErr);
+          showProcessing(false);
+          showToast('HEIC 轉換失敗。建議：先用 iPhone「照片」app 把 HEIC 轉成 JPG 再上傳');
+          return;
+        }
+      }
+    }
+    try {
+      const img = await loadImage(imgSrc);
+      const corners = detectDocumentCorners(img);
+      const id = generateId();
+
+      const page = {
+        id,
+        originalImg: img,
+        corners,
+        filter: 'scan',
+        brightness: 0,
+        contrast: 0,
+        processedCanvas: null,
+        thumbUrl: null, // FIX #1: Cache thumbnail URL
+      };
+
+      page.processedCanvas = await processImage(img, corners, page.filter, page.brightness, page.contrast);
+      page.thumbUrl = page.processedCanvas.toDataURL('image/jpeg', THUMB_QUALITY);
+
+      state.pages.push(page);
+      renderPagesList();
+      selectPage(id);
+      showToast(`已新增第 ${state.pages.length} 頁`);
+    } catch(e) {
+      console.error('Error processing image:', e);
+      showToast('處理圖片時發生錯誤');
+    }
+    showProcessing(false);
+  }
+
+  function removePage(id) {
+    const idx = state.pages.findIndex(p => p.id === id);
+    if (idx === -1) return;
+    state.pages.splice(idx, 1);
+    if (state.activePageId === id) {
+      state.activePageId = null;
+      if (state.pages.length > 0) {
+        selectPage(state.pages[Math.min(idx, state.pages.length-1)].id);
+      } else {
+        el.editCard.style.display = 'none';
+      }
+    }
+    renderPagesList();
+    showToast('已刪除頁面');
+  }
+
+  function selectPage(id) {
+    const page = state.pages.find(p => p.id === id);
+    if (!page) return;
+    state.activePageId = id;
+
+    el.editCard.style.display = '';
+    const idx = state.pages.indexOf(page) + 1;
+    el.editingPageNum.textContent = `#${idx}`;
+
+    el.brightness.value = page.brightness;
+    el.contrast.value = page.contrast;
+    el.brightnessVal.textContent = page.brightness;
+    el.contrastVal.textContent = page.contrast;
+
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.filter === page.filter);
+    });
+
+    renderPreview();
+    renderPagesList();
+  }
+
+  async function updateActivePage() {
+    const page = state.pages.find(p => p.id === state.activePageId);
+    if (!page) return;
+    showProcessing(true);
+    page.processedCanvas = await processImage(
+      page.originalImg, page.corners, page.filter, page.brightness, page.contrast
+    );
+    // FIX #1: Update cached thumbnail
+    page.thumbUrl = page.processedCanvas.toDataURL('image/jpeg', THUMB_QUALITY);
+    renderPreview();
+    renderPagesList();
+    showProcessing(false);
+  }
+
+  // --- Rendering ---
+
+  function renderPreview() {
+    const page = state.pages.find(p => p.id === state.activePageId);
+    if (!page) return;
+
+    const canvas = el.previewCanvas;
+    const img = page.originalImg;
+
+    const containerW = el.previewContainer.clientWidth;
+    const containerH = 500;
+    const scale = Math.min(containerW / img.width, containerH / img.height, 1);
+    const dw = Math.round(img.width * scale);
+    const dh = Math.round(img.height * scale);
+
+    canvas.width = dw;
+    canvas.height = dh;
+    canvas.getContext('2d').drawImage(img, 0, 0, dw, dh);
+    renderCropOverlay(page, dw, dh);
+  }
+
+  function renderCropOverlay(page, w, h) {
+    const cc = el.cropCanvas;
+    cc.width = w;
+    cc.height = h;
+    // Don't set style.width/height — let CSS width:100%;height:100%
+    // keep it aligned with the preview canvas via the wrapper
+    const ctx = cc.getContext('2d');
+    const corners = page.corners;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.moveTo(corners[0].x * w, corners[0].y * h);
+    for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x * w, corners[i].y * h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+
+    ctx.strokeStyle = '#2563eb';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(corners[0].x * w, corners[0].y * h);
+    for (let i = 1; i < 4; i++) ctx.lineTo(corners[i].x * w, corners[i].y * h);
+    ctx.closePath();
+    ctx.stroke();
+
+    // FIX #5: Larger handles for touch (12px radius)
+    const handleRadius = Math.max(10, Math.min(w, h) * 0.025);
+    corners.forEach((c) => {
+      ctx.fillStyle = 'white';
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(c.x * w, c.y * h, handleRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    });
+  }
+
+  function renderPagesList() {
+    const list = el.pagesList;
+    list.querySelectorAll('.page-thumb').forEach(t => t.remove());
+
+    el.emptyPages.classList.toggle('hidden', state.pages.length > 0);
+    el.pageCount.textContent = `${state.pages.length} 頁`;
+    el.btnExportPdf.disabled = state.pages.length === 0;
+
+    state.pages.forEach((page, idx) => {
+      const thumb = document.createElement('div');
+      thumb.className = 'page-thumb' + (page.id === state.activePageId ? ' active' : '');
+      thumb.draggable = true;
+      thumb.dataset.id = page.id;
+
+      const thumbImg = document.createElement('img');
+      // FIX #1: Use cached thumbnail URL instead of re-encoding
+      if (page.thumbUrl) {
+        thumbImg.src = page.thumbUrl;
+      }
+      thumb.appendChild(thumbImg);
+
+      const numBadge = document.createElement('div');
+      numBadge.className = 'page-num';
+      numBadge.textContent = idx + 1;
+      thumb.appendChild(numBadge);
+
+      const actions = document.createElement('div');
+      actions.className = 'page-actions';
+      const delBtn = document.createElement('button');
+      delBtn.className = 'page-action-btn delete';
+      delBtn.textContent = '✕';
+      delBtn.onclick = (e) => { e.stopPropagation(); removePage(page.id); };
+      actions.appendChild(delBtn);
+      thumb.appendChild(actions);
+
+      thumb.onclick = () => selectPage(page.id);
+
+      // Drag & drop reordering
+      thumb.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', page.id);
+        thumb.classList.add('dragging');
+      });
+      thumb.addEventListener('dragend', () => thumb.classList.remove('dragging'));
+      thumb.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        thumb.classList.add('drag-over-item');
+      });
+      thumb.addEventListener('dragleave', () => thumb.classList.remove('drag-over-item'));
+      thumb.addEventListener('drop', (e) => {
+        e.preventDefault();
+        thumb.classList.remove('drag-over-item');
+        const fromId = e.dataTransfer.getData('text/plain');
+        const fromIdx = state.pages.findIndex(p => p.id === fromId);
+        const toIdx = state.pages.findIndex(p => p.id === page.id);
+        if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
+          const [moved] = state.pages.splice(fromIdx, 1);
+          state.pages.splice(toIdx, 0, moved);
+          renderPagesList();
+        }
+      });
+
+      list.appendChild(thumb);
+    });
+  }
+
+  // --- Crop handles ---
+
+  // FIX #5: Better touch handling with adaptive hit area
+  function setupCropHandlers() {
+    const cc = el.cropCanvas;
+
+    function getCornerAt(mx, my) {
+      const page = state.pages.find(p => p.id === state.activePageId);
+      if (!page) return -1;
+      const w = cc.width, h = cc.height;
+      const tolerance = Math.max(25, Math.min(w, h) * 0.04);
+      for (let i = 0; i < 4; i++) {
+        const cx = page.corners[i].x * w;
+        const cy = page.corners[i].y * h;
+        if (Math.hypot(mx - cx, my - cy) < tolerance) return i;
+      }
+      return -1;
+    }
+
+    // Convert screen coords to canvas resolution coords
+    function getPos(e) {
+      const rect = cc.getBoundingClientRect();
+      const touch = e.touches ? e.touches[0] : e;
+      const scaleX = cc.width / rect.width;
+      const scaleY = cc.height / rect.height;
+      return {
+        x: (touch.clientX - rect.left) * scaleX,
+        y: (touch.clientY - rect.top) * scaleY,
+      };
+    }
+
+    function onDown(e) {
+      const pos = getPos(e);
+      const idx = getCornerAt(pos.x, pos.y);
+      if (idx >= 0) {
+        state.isDragging = true;
+        state.dragCornerIdx = idx;
+        e.preventDefault();
+      }
+    }
+
+    function onMove(e) {
+      if (!state.isDragging) return;
+      const page = state.pages.find(p => p.id === state.activePageId);
+      if (!page) return;
+      const pos = getPos(e);
+      page.corners[state.dragCornerIdx] = {
+        x: Math.max(0, Math.min(1, pos.x / cc.width)),
+        y: Math.max(0, Math.min(1, pos.y / cc.height)),
+      };
+      renderCropOverlay(page, cc.width, cc.height);
+      e.preventDefault();
+    }
+
+    function onUp() {
+      if (state.isDragging) {
+        state.isDragging = false;
+        state.dragCornerIdx = -1;
+        // Re-process on release
+        updateActivePage();
+      }
+    }
+
+    cc.addEventListener('mousedown', onDown);
+    cc.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    cc.addEventListener('touchstart', onDown, {passive: false});
+    cc.addEventListener('touchmove', onMove, {passive: false});
+    window.addEventListener('touchend', onUp, {passive: false});
+  }
+
+  // --- Camera ---
+
+  // FIX #7: Better camera permission handling
+  let cameraPermissionDenied = false;
+
+  async function openCamera() {
+    if (cameraPermissionDenied) {
+      showToast('相機權限被拒絕，請在瀏覽器設定中允許');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: state.facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } }
+      });
+      state.cameraStream = stream;
+      el.cameraVideo.srcObject = stream;
+      el.cameraModal.classList.remove('hidden');
+    } catch(e) {
+      if (e.name === 'NotAllowedError') {
+        cameraPermissionDenied = true;
+        showToast('相機權限被拒絕，請在瀏覽器設定中允許');
+      } else if (e.name === 'NotFoundError') {
+        showToast('未找到可用的相機設備');
+      } else {
+        showToast('無法存取相機：' + e.message);
+      }
+    }
+  }
+
+  function closeCamera() {
+    if (state.cameraStream) {
+      state.cameraStream.getTracks().forEach(t => t.stop());
+      state.cameraStream = null;
+    }
+    el.cameraModal.classList.add('hidden');
+  }
+
+  async function switchCamera() {
+    closeCamera();
+    state.facingMode = state.facingMode === 'environment' ? 'user' : 'environment';
+    await openCamera();
+  }
+
+  function capturePhoto() {
+    const video = el.cameraVideo;
+    const c = document.createElement('canvas');
+    c.width = video.videoWidth;
+    c.height = video.videoHeight;
+    c.getContext('2d').drawImage(video, 0, 0);
+    const dataUrl = c.toDataURL('image/jpeg', 0.95);
+    closeCamera();
+    addPage(dataUrl);
+  }
+
+  // --- File handling ---
+
+  function handleFiles(files) {
+    Array.from(files).forEach(file => {
+      if (validateFile(file)) {
+        addPage(file);
+      }
+    });
+  }
+
+  // --- PDF Export ---
+
+  // FIX #6: Progress feedback + mobile share API
+  async function exportPdf() {
+    if (state.pages.length === 0) return;
+    showToast('正在生成 PDF...', 10000);
+    el.btnExportPdf.disabled = true;
+    el.exportProgress.classList.remove('hidden');
+    el.exportProgressFill.style.width = '0%';
+
+    try {
+      const { PDFDocument } = PDFLib;
+      const pdfDoc = await PDFDocument.create();
+      const total = state.pages.length;
+
+      for (let i = 0; i < total; i++) {
+        const page = state.pages[i];
+        if (!page.processedCanvas) continue;
+
+        // Progress
+        el.exportProgressFill.style.width = `${((i + 0.5) / total * 100).toFixed(0)}%`;
+
+        const jpegDataUrl = page.processedCanvas.toDataURL('image/jpeg', 0.92);
+        const jpegBytes = Uint8Array.from(atob(jpegDataUrl.split(',')[1]), c => c.charCodeAt(0));
+        const jpegImage = await pdfDoc.embedJpg(jpegBytes);
+
+        const imgAspect = page.processedCanvas.width / page.processedCanvas.height;
+        let pageWidth, pageHeight;
+        if (imgAspect > 1) {
+          pageWidth = 842;
+          pageHeight = pageWidth / imgAspect;
+        } else {
+          pageHeight = 842;
+          pageWidth = pageHeight * imgAspect;
+        }
+
+        const pdfPage = pdfDoc.addPage([pageWidth, pageHeight]);
+        pdfPage.drawImage(jpegImage, { x: 0, y: 0, width: pageWidth, height: pageHeight });
+
+        el.exportProgressFill.style.width = `${((i + 1) / total * 100).toFixed(0)}%`;
+
+        // Yield to UI thread
+        await new Promise(r => setTimeout(r, 10));
+      }
+
+      const pdfBytes = await pdfDoc.save();
+      const filename = `ScanPro_${new Date().toISOString().slice(0,10)}.pdf`;
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+      // FIX: Mobile share API support
+      const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
+      if (isMobile && navigator.share && navigator.canShare) {
+        const file = new File([blob], filename, { type: 'application/pdf' });
+        if (navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({ files: [file], title: 'ScanPro PDF' });
+            showToast(`PDF 已分享（${total} 頁）`);
+          } catch(shareErr) {
+            if (shareErr.name !== 'AbortError') {
+              downloadBlob(blob, filename);
+            }
+          }
+        } else {
+          downloadBlob(blob, filename);
+        }
+      } else {
+        downloadBlob(blob, filename);
+      }
+
+      showToast(`PDF 已下載（${total} 頁）`);
+    } catch(e) {
+      console.error('PDF export error:', e);
+      showToast('PDF 生成失敗');
+    }
+
+    el.btnExportPdf.disabled = state.pages.length === 0;
+    el.exportProgress.classList.add('hidden');
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+  }
+
+  // --- Event Bindings ---
+
+  function init() {
+    el.btnUpload.onclick = () => el.fileInput.click();
+    el.dropZone.onclick = () => el.fileInput.click();
+    el.fileInput.onchange = (e) => { handleFiles(e.target.files); e.target.value = ''; };
+
+    el.dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      el.dropZone.classList.add('drag-over');
+    });
+    el.dropZone.addEventListener('dragleave', () => el.dropZone.classList.remove('drag-over'));
+    el.dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      el.dropZone.classList.remove('drag-over');
+      handleFiles(e.dataTransfer.files);
+    });
+
+    el.btnCamera.onclick = openCamera;
+    el.btnCloseCamera.onclick = closeCamera;
+    el.btnSwitchCamera.onclick = switchCamera;
+    el.btnCapture.onclick = capturePhoto;
+
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.onclick = () => {
+        const page = state.pages.find(p => p.id === state.activePageId);
+        if (!page) return;
+        page.filter = btn.dataset.filter;
+        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        updateActivePage();
+      };
+    });
+
+    el.brightness.oninput = () => {
+      const page = state.pages.find(p => p.id === state.activePageId);
+      if (!page) return;
+      page.brightness = parseInt(el.brightness.value);
+      el.brightnessVal.textContent = page.brightness;
+    };
+    el.brightness.onchange = () => updateActivePage();
+
+    el.contrast.oninput = () => {
+      const page = state.pages.find(p => p.id === state.activePageId);
+      if (!page) return;
+      page.contrast = parseInt(el.contrast.value);
+      el.contrastVal.textContent = page.contrast;
+    };
+    el.contrast.onchange = () => updateActivePage();
+
+    el.btnResetCrop.onclick = () => {
+      const page = state.pages.find(p => p.id === state.activePageId);
+      if (!page) return;
+      page.corners = detectDocumentCorners(page.originalImg);
+      renderPreview();
+      updateActivePage();
+    };
+
+    el.btnApplyEdit.onclick = () => updateActivePage();
+
+    el.btnClearAll.onclick = () => {
+      if (state.pages.length === 0) return;
+      if (confirm('確定要清除所有頁面？')) {
+        state.pages = [];
+        state.activePageId = null;
+        el.editCard.style.display = 'none';
+        renderPagesList();
+        showToast('已清除所有頁面');
+      }
+    };
+
+    el.btnExportPdf.onclick = exportPdf;
+
+    setupCropHandlers();
+    renderPagesList();
+
+    // FIX: Handle orientation changes
+    window.addEventListener('resize', () => {
+      if (state.activePageId) {
+        requestAnimationFrame(() => renderPreview());
+      }
+    });
+
+    // Warn before closing with unsaved pages
+    window.addEventListener('beforeunload', (e) => {
+      if (state.pages.length > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
+  }
+
+  return { init };
+})();
+
+document.addEventListener('DOMContentLoaded', App.init);
+</script>
+</body>
+</html>
