@@ -1,11 +1,12 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
+import * as MediaLibrary from 'expo-media-library';
 import { ScanPage } from '../store/scanStore';
 
 export async function exportToPdf(pages: ScanPage[]): Promise<void> {
   const validPages = pages.filter((p) => p.processedBase64);
-  if (validPages.length === 0) throw new Error('No pages to export');
+  if (validPages.length === 0) throw new Error('沒有可輸出的頁面');
 
   const imagesHtml = validPages
     .map(
@@ -30,43 +31,28 @@ export async function exportToPdf(pages: ScanPage[]): Promise<void> {
   });
 }
 
-export async function exportImages(pages: ScanPage[]): Promise<void> {
+export async function exportImages(pages: ScanPage[]): Promise<number> {
   const validPages = pages.filter((p) => p.processedBase64);
-  if (validPages.length === 0) throw new Error('No pages to export');
+  if (validPages.length === 0) throw new Error('沒有可輸出的頁面');
+
+  // Request permission
+  const { status } = await MediaLibrary.requestPermissionsAsync();
+  if (status !== 'granted') {
+    throw new Error('需要相簿寫入權限才能儲存圖片，請在設定中開啟');
+  }
 
   const dateStr = new Date().toISOString().slice(0, 10);
+  let savedCount = 0;
 
-  if (validPages.length === 1) {
-    // Single page: share directly
-    const base64 = validPages[0].processedBase64.split(',')[1];
-    const filename = `${FileSystem.cacheDirectory}ScanPro_${dateStr}.jpg`;
+  for (let i = 0; i < validPages.length; i++) {
+    const base64 = validPages[i].processedBase64.split(',')[1];
+    const filename = `${FileSystem.cacheDirectory}ScanPro_${dateStr}_p${i + 1}.jpg`;
     await FileSystem.writeAsStringAsync(filename, base64, {
       encoding: FileSystem.EncodingType.Base64,
     });
-    await Sharing.shareAsync(filename, {
-      mimeType: 'image/jpeg',
-      dialogTitle: 'ScanPro 圖片',
-      UTI: 'public.jpeg',
-    });
-  } else {
-    // Multiple pages: share each one (iOS supports multi-file share)
-    const fileUris: string[] = [];
-    for (let i = 0; i < validPages.length; i++) {
-      const base64 = validPages[i].processedBase64.split(',')[1];
-      const filename = `${FileSystem.cacheDirectory}ScanPro_${dateStr}_p${i + 1}.jpg`;
-      await FileSystem.writeAsStringAsync(filename, base64, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      fileUris.push(filename);
-    }
-    // Share the first file; iOS will show all if sharing folder is not available
-    // Best UX: share files one by one or use a zip (we keep it simple here)
-    for (const uri of fileUris) {
-      await Sharing.shareAsync(uri, {
-        mimeType: 'image/jpeg',
-        dialogTitle: 'ScanPro 圖片',
-        UTI: 'public.jpeg',
-      });
-    }
+    await MediaLibrary.saveToLibraryAsync(filename);
+    savedCount++;
   }
+
+  return savedCount;
 }

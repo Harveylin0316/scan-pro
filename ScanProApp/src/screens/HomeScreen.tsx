@@ -32,8 +32,8 @@ export default function HomeScreen() {
   const handleExportImages = useCallback(async () => {
     try {
       setExporting('img');
-      await exportImages(pages);
-      Alert.alert('輸出成功', `${pages.length} 張圖片已匯出`);
+      const count = await exportImages(pages);
+      Alert.alert('已儲存到相簿', `${count} 張圖片已存入你的相簿`);
     } catch (e: any) {
       Alert.alert('輸出失敗', e.message);
     } finally {
