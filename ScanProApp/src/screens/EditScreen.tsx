@@ -3,9 +3,10 @@ import React, {
 } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Image,
-  PanResponder, ActivityIndicator, SafeAreaView,
-  ScrollView, Alert, Dimensions,
+  ActivityIndicator, SafeAreaView, ScrollView, Alert, Dimensions,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { runOnJS } from 'react-native-reanimated';
 import Slider from '@react-native-community/slider';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -20,7 +21,7 @@ type Route = RouteProp<RootStackParamList, 'Edit'>;
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const HANDLE_R = 22;
-const HANDLE_HIT = 50; // hit-test radius
+const HANDLE_HIT = 55;
 
 type ImageLayout = {
   containerW: number; containerH: number;
@@ -54,10 +55,9 @@ export default function EditScreen() {
   const { pages, addPage, updatePage } = useScanStore();
   const existingPage = pageId ? pages.find((p) => p.id === pageId) : undefined;
 
-  // ── Step ──────────────────────────────────────────────────────────────────────
   const [step, setStep] = useState<Step>('crop');
 
-  // ── Image size + layout ──────────────────────────────────────────────────────
+  // Image size + layout
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [containerDims, setContainerDims] = useState<{ w: number; h: number } | null>(null);
 
@@ -73,18 +73,18 @@ export default function EditScreen() {
     };
   }, [imgSize, containerDims]);
 
-  // ── Editing state ────────────────────────────────────────────────────────────
+  // Editing state
   const [corners, setCorners]       = useState<Corner[]>(existingPage?.corners ?? DEFAULT_CORNERS);
   const [filter, setFilter]         = useState<Filter>(existingPage?.filter ?? 'scan');
   const [brightness, setBrightness] = useState(existingPage?.brightness ?? 0);
   const [contrast, setContrast]     = useState(existingPage?.contrast ?? 0);
 
-  // ── UI state ─────────────────────────────────────────────────────────────────
+  // UI state
   const [detecting, setDetecting]           = useState(!existingPage);
   const [processing, setProcessing]         = useState(false);
   const [processorReady, setProcessorReady] = useState(false);
 
-  // ── Cached base64 ────────────────────────────────────────────────────────────
+  // Cached base64
   const imageBase64Ref = useRef<string | null>(null);
   const readImageBase64 = useCallback(async () => {
     if (imageBase64Ref.current) return imageBase64Ref.current;
@@ -100,7 +100,7 @@ export default function EditScreen() {
     Image.getSize(uri, (w, h) => setImgSize({ w, h }), () => setImgSize({ w: 1, h: 1 }));
   }, [uri]);
 
-  // ── Auto-detect corners ──────────────────────────────────────────────────────
+  // Auto-detect corners
   const runDetect = useCallback(async () => {
     if (!processorReady || existingPage) return;
     try {
@@ -120,43 +120,53 @@ export default function EditScreen() {
     setContainerDims({ w: width, h: height });
   }, []);
 
-  // ── Single PanResponder on overlay — refs only, never stale ──────────────────
-  const cornersRef    = useRef(corners);   cornersRef.current = corners;
-  const layoutRef     = useRef(layout);    layoutRef.current  = layout;
-  const activeIdx     = useRef(-1);
-  const startCorner   = useRef<Corner>({ x: 0, y: 0 });
+  // ── Gesture handler (react-native-gesture-handler) ───────────────────────────
+  const cornersRef = useRef(corners);   cornersRef.current = corners;
+  const layoutRef  = useRef(layout);    layoutRef.current  = layout;
+  const activeIdx  = useRef(-1);
+  const startCornerRef = useRef<Corner>({ x: 0, y: 0 });
 
-  const overlayPanResponder = useMemo(() => PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: (_, gs) => Math.abs(gs.dx) > 2 || Math.abs(gs.dy) > 2,
-    onPanResponderGrant: (e) => {
-      const lay = layoutRef.current;
-      if (!lay) return;
-      const tx = e.nativeEvent.locationX;
-      const ty = e.nativeEvent.locationY;
-      let best = -1, bestDist = Infinity;
-      cornersRef.current.forEach((c, i) => {
-        const p = n2s(c, lay);
-        const d = Math.hypot(tx - p.x, ty - p.y);
-        if (d < HANDLE_HIT && d < bestDist) { bestDist = d; best = i; }
-      });
-      activeIdx.current = best;
-      if (best >= 0) startCorner.current = cornersRef.current[best];
-    },
-    onPanResponderMove: (_, gs) => {
-      const lay = layoutRef.current;
-      const idx = activeIdx.current;
-      if (idx < 0 || !lay) return;
-      const ref = n2s(startCorner.current, lay);
-      setCorners(prev => {
-        const next = [...prev];
-        next[idx] = s2n(ref.x + gs.dx, ref.y + gs.dy, lay);
-        return next;
-      });
-    },
-    onPanResponderRelease: () => { activeIdx.current = -1; },
-    onPanResponderTerminate: () => { activeIdx.current = -1; },
-  }), []); // zero deps — everything via refs
+  const updateCorner = useCallback((translationX: number, translationY: number) => {
+    const lay = layoutRef.current;
+    const idx = activeIdx.current;
+    if (idx < 0 || !lay) return;
+    const ref = n2s(startCornerRef.current, lay);
+    setCorners(prev => {
+      const next = [...prev];
+      next[idx] = s2n(ref.x + translationX, ref.y + translationY, lay);
+      return next;
+    });
+  }, []);
+
+  const panGesture = useMemo(() =>
+    Gesture.Pan()
+      .minDistance(0)
+      .onBegin((e) => {
+        'worklet';
+        const lay = layoutRef.current;
+        if (!lay) return;
+        const tx = e.x, ty = e.y;
+        let best = -1, bestDist = 99999;
+        const cs = cornersRef.current;
+        for (let i = 0; i < cs.length; i++) {
+          const p = n2s(cs[i], lay);
+          const d = Math.sqrt((tx - p.x) ** 2 + (ty - p.y) ** 2);
+          if (d < HANDLE_HIT && d < bestDist) { bestDist = d; best = i; }
+        }
+        activeIdx.current = best;
+        if (best >= 0) startCornerRef.current = cs[best];
+      })
+      .onUpdate((e) => {
+        'worklet';
+        if (activeIdx.current >= 0) {
+          runOnJS(updateCorner)(e.translationX, e.translationY);
+        }
+      })
+      .onFinalize(() => {
+        'worklet';
+        activeIdx.current = -1;
+      }),
+  [updateCorner]);
 
   // ── Confirm ──────────────────────────────────────────────────────────────────
   const handleConfirm = useCallback(async () => {
@@ -193,24 +203,22 @@ export default function EditScreen() {
     if (!layout) return null;
     return corners.map((c, i) => {
       const p = n2s(c, layout);
-      return (
-        <View key={i} style={[styles.handle, { left: p.x - HANDLE_R, top: p.y - HANDLE_R }]} />
-      );
+      return <View key={i} style={[styles.handle, { left: p.x - HANDLE_R, top: p.y - HANDLE_R }]} />;
     });
   };
 
   const renderLines = () => {
     if (!layout) return null;
     const pts = corners.map(c => n2s(c, layout));
-    const pairs = [[0,1],[1,2],[2,3],[3,0]];
-    return pairs.map(([a,b], i) => {
+    return [[0,1],[1,2],[2,3],[3,0]].map(([a,b], i) => {
       const dx = pts[b].x - pts[a].x, dy = pts[b].y - pts[a].y;
       const len = Math.hypot(dx, dy);
       const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-      const mx = (pts[a].x + pts[b].x) / 2, my = (pts[a].y + pts[b].y) / 2;
       return (
         <View key={i} style={[styles.cropLine, {
-          left: mx - len / 2, top: my - 1, width: len,
+          left: (pts[a].x + pts[b].x) / 2 - len / 2,
+          top: (pts[a].y + pts[b].y) / 2 - 1,
+          width: len,
           transform: [{ rotate: `${angle}deg` }],
         }]} />
       );
@@ -225,36 +233,35 @@ export default function EditScreen() {
   ];
 
   // ════════════════════════════════════════════════════════════════════════════
-  //  STEP 1: CROP — full-screen, no scroll
+  //  STEP 1: CROP — dark full-screen, no scroll
   // ════════════════════════════════════════════════════════════════════════════
   if (step === 'crop') {
     return (
       <SafeAreaView style={styles.safeDark}>
         <ImageProcessor ref={processorRef} onReady={() => setProcessorReady(true)} />
 
-        {/* Header */}
         <View style={styles.headerDark}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBtn}>
             <Text style={styles.headerBtnText}>取消</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitleLight}>裁切</Text>
-          <TouchableOpacity
-            style={styles.headerBtn}
-            onPress={() => setStep('adjust')}
-          >
+          <TouchableOpacity style={styles.headerBtn} onPress={() => setStep('adjust')}>
             <Text style={styles.headerBtnAccent}>下一步</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Full-screen image + handles */}
         <View style={styles.cropArea} onLayout={onContainerLayout}>
           <Image source={{ uri }} style={styles.cropImage} resizeMode="contain" />
-          {layout && (
-            <View style={StyleSheet.absoluteFill} {...overlayPanResponder.panHandlers}>
-              {renderLines()}
-              {detecting ? null : renderHandles()}
-            </View>
+
+          {layout && !detecting && (
+            <GestureDetector gesture={panGesture}>
+              <Animated.View style={StyleSheet.absoluteFill}>
+                {renderLines()}
+                {renderHandles()}
+              </Animated.View>
+            </GestureDetector>
           )}
+
           {detecting && (
             <View style={styles.detectingOverlay}>
               <ActivityIndicator color="#fff" size="large" />
@@ -263,7 +270,6 @@ export default function EditScreen() {
           )}
         </View>
 
-        {/* Bottom toolbar */}
         <View style={styles.cropToolbar}>
           <TouchableOpacity style={styles.toolbarBtn} onPress={() => setCorners(DEFAULT_CORNERS)}>
             <Text style={styles.toolbarBtnText}>重設裁切</Text>
@@ -274,13 +280,12 @@ export default function EditScreen() {
   }
 
   // ════════════════════════════════════════════════════════════════════════════
-  //  STEP 2: ADJUST — scrollable filters + sliders
+  //  STEP 2: ADJUST — scrollable
   // ════════════════════════════════════════════════════════════════════════════
   return (
     <SafeAreaView style={styles.safe}>
       <ImageProcessor ref={processorRef} onReady={() => setProcessorReady(true)} />
 
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => setStep('crop')} style={styles.headerBtn}>
           <Text style={styles.backText}>← 裁切</Text>
@@ -298,12 +303,10 @@ export default function EditScreen() {
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-        {/* Small preview */}
         <View style={styles.previewContainer}>
           <Image source={{ uri }} style={styles.previewImage} resizeMode="contain" />
         </View>
 
-        {/* Filter */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>掃描模式</Text>
           <View style={styles.filterRow}>
@@ -321,7 +324,6 @@ export default function EditScreen() {
           </View>
         </View>
 
-        {/* Sliders */}
         <View style={styles.section}>
           <View style={styles.sliderRow}>
             <Text style={styles.sliderLabel}>亮度</Text>
@@ -347,9 +349,8 @@ export default function EditScreen() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
 const styles = StyleSheet.create({
-  // ── Crop step (dark) ─────────────────────────────────────────────────────────
+  // Crop step (dark)
   safeDark: { flex: 1, backgroundColor: '#111827' },
   headerDark: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
@@ -361,10 +362,7 @@ const styles = StyleSheet.create({
   headerBtnText: { fontSize: 15, color: '#9ca3af' },
   headerBtnAccent: { fontSize: 15, fontWeight: '600', color: '#60a5fa' },
 
-  cropArea: {
-    flex: 1, backgroundColor: '#111827',
-    justifyContent: 'center', alignItems: 'center',
-  },
+  cropArea: { flex: 1, backgroundColor: '#111827' },
   cropImage: { width: '100%', height: '100%' },
 
   handle: {
@@ -396,7 +394,7 @@ const styles = StyleSheet.create({
   },
   toolbarBtnText: { color: '#d1d5db', fontSize: 14, fontWeight: '500' },
 
-  // ── Adjust step (light) ──────────────────────────────────────────────────────
+  // Adjust step (light)
   safe: { flex: 1, backgroundColor: '#f9fafb' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
