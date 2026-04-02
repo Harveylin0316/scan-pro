@@ -490,9 +490,14 @@
       </div>
     </div>
     <div class="export-section">
-      <button class="btn btn-success" id="btnExportPdf" disabled style="width:100%;">
-        📥 輸出 PDF
-      </button>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <button class="btn btn-secondary" id="btnExportImages" disabled style="flex:1;">
+          🖼️ 輸出圖檔
+        </button>
+        <button class="btn btn-success" id="btnExportPdf" disabled style="flex:1;">
+          📥 輸出 PDF
+        </button>
+      </div>
       <div class="progress-bar hidden" id="exportProgress">
         <div class="progress-bar-fill" id="exportProgressFill"></div>
       </div>
@@ -567,6 +572,7 @@ const App = (() => {
     emptyPages: $('emptyPages'),
     pageCount: $('pageCount'),
     btnExportPdf: $('btnExportPdf'),
+    btnExportImages: $('btnExportImages'),
     btnClearAll: $('btnClearAll'),
     cameraModal: $('cameraModal'),
     cameraVideo: $('cameraVideo'),
@@ -1174,6 +1180,7 @@ const App = (() => {
     el.emptyPages.classList.toggle('hidden', state.pages.length > 0);
     el.pageCount.textContent = `${state.pages.length} 頁`;
     el.btnExportPdf.disabled = state.pages.length === 0;
+    el.btnExportImages.disabled = state.pages.length === 0;
 
     state.pages.forEach((page, idx) => {
       const thumb = document.createElement('div');
@@ -1443,6 +1450,7 @@ const App = (() => {
     }
 
     el.btnExportPdf.disabled = state.pages.length === 0;
+    el.btnExportImages.disabled = state.pages.length === 0;
     el.exportProgress.classList.add('hidden');
   }
 
@@ -1457,6 +1465,79 @@ const App = (() => {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     }, 100);
+  }
+
+  function downloadDataUrl(dataUrl, filename) {
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => document.body.removeChild(a), 100);
+  }
+
+  // --- Image Export ---
+  async function exportImages() {
+    if (state.pages.length === 0) return;
+    const total = state.pages.length;
+    el.btnExportImages.disabled = true;
+    el.btnExportPdf.disabled = true;
+    showToast(total === 1 ? '正在輸出圖片...' : `正在輸出 ${total} 張圖片...`, 10000);
+
+    try {
+      const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
+      const dateStr = new Date().toISOString().slice(0, 10);
+
+      // Collect valid pages
+      const validPages = state.pages.filter(p => p.processedCanvas);
+
+      if (isMobile && navigator.share && navigator.canShare) {
+        // Try sharing all images at once via Share API
+        const files = validPages.map((page, i) => {
+          const dataUrl = page.processedCanvas.toDataURL('image/jpeg', 0.92);
+          const byteStr = atob(dataUrl.split(',')[1]);
+          const bytes = new Uint8Array(byteStr.length);
+          for (let j = 0; j < byteStr.length; j++) bytes[j] = byteStr.charCodeAt(j);
+          const filename = validPages.length === 1
+            ? `ScanPro_${dateStr}.jpg`
+            : `ScanPro_${dateStr}_p${i + 1}.jpg`;
+          return new File([bytes], filename, { type: 'image/jpeg' });
+        });
+
+        if (navigator.canShare({ files })) {
+          try {
+            await navigator.share({ files, title: 'ScanPro 圖片' });
+            showToast(validPages.length === 1 ? '圖片已分享' : `${validPages.length} 張圖片已分享`);
+          } catch(shareErr) {
+            if (shareErr.name !== 'AbortError') {
+              // Share failed for non-abort reason, fall through to downloads below
+              throw shareErr;
+            }
+          }
+          return;
+        }
+      }
+
+      // Desktop: download each file with a small delay to avoid browser blocking
+      for (let i = 0; i < validPages.length; i++) {
+        const dataUrl = validPages[i].processedCanvas.toDataURL('image/jpeg', 0.92);
+        const filename = validPages.length === 1
+          ? `ScanPro_${dateStr}.jpg`
+          : `ScanPro_${dateStr}_p${i + 1}.jpg`;
+        downloadDataUrl(dataUrl, filename);
+        if (i < validPages.length - 1) {
+          await new Promise(r => setTimeout(r, 200));
+        }
+      }
+
+      showToast(validPages.length === 1 ? '圖片已下載' : `${validPages.length} 張圖片已下載`);
+    } catch(e) {
+      console.error('Image export error:', e);
+      showToast('圖片輸出失敗');
+    } finally {
+      el.btnExportImages.disabled = state.pages.length === 0;
+      el.btnExportPdf.disabled = state.pages.length === 0;
+    }
   }
 
   // --- Event Bindings ---
@@ -1531,6 +1612,7 @@ const App = (() => {
     };
 
     el.btnExportPdf.onclick = exportPdf;
+    el.btnExportImages.onclick = exportImages;
 
     setupCropHandlers();
     renderPagesList();
