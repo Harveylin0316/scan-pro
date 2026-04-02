@@ -293,8 +293,8 @@ window.handleMessage = function(msgStr) {
       var canvas = perspectiveTransform(img, data.corners);
       canvas = applyScanFilter(canvas, data.filter, data.brightness, data.contrast);
 
-      var tw = 240;
-      var th = Math.round(240 * canvas.height / (canvas.width || 1));
+      var tw = 480;
+      var th = Math.round(480 * canvas.height / (canvas.width || 1));
       var thumbCanvas = document.createElement('canvas');
       thumbCanvas.width = tw; thumbCanvas.height = th;
       thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
