@@ -6,7 +6,6 @@ import {
   ActivityIndicator, SafeAreaView, ScrollView, Alert, Dimensions,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { runOnJS } from 'react-native-reanimated';
 import Slider from '@react-native-community/slider';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -140,9 +139,9 @@ export default function EditScreen() {
 
   const panGesture = useMemo(() =>
     Gesture.Pan()
+      .runOnJS(true)
       .minDistance(0)
       .onBegin((e) => {
-        'worklet';
         const lay = layoutRef.current;
         if (!lay) return;
         const tx = e.x, ty = e.y;
@@ -157,13 +156,11 @@ export default function EditScreen() {
         if (best >= 0) startCornerRef.current = cs[best];
       })
       .onUpdate((e) => {
-        'worklet';
         if (activeIdx.current >= 0) {
-          runOnJS(updateCorner)(e.translationX, e.translationY);
+          updateCorner(e.translationX, e.translationY);
         }
       })
       .onFinalize(() => {
-        'worklet';
         activeIdx.current = -1;
       }),
   [updateCorner]);
@@ -255,10 +252,10 @@ export default function EditScreen() {
 
           {layout && !detecting && (
             <GestureDetector gesture={panGesture}>
-              <Animated.View style={StyleSheet.absoluteFill}>
+              <View style={StyleSheet.absoluteFill}>
                 {renderLines()}
                 {renderHandles()}
-              </Animated.View>
+              </View>
             </GestureDetector>
           )}
 
