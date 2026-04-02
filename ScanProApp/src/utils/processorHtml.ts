@@ -300,15 +300,34 @@ window.handleMessage = function(msgStr) {
       var canvas = perspectiveTransform(img, data.corners);
       canvas = applyScanFilter(canvas, data.filter, data.brightness, data.contrast);
 
+      // ─── Place on A4 canvas (white bg, centered, contain) ────────────
+      var A4_W = 2100, A4_H = 2970; // A4 at 254 DPI (print quality)
+      var a4Canvas = document.createElement('canvas');
+      a4Canvas.width = A4_W; a4Canvas.height = A4_H;
+      var a4Ctx = a4Canvas.getContext('2d');
+      a4Ctx.fillStyle = '#ffffff';
+      a4Ctx.fillRect(0, 0, A4_W, A4_H);
+
+      // Fit content inside A4 with padding
+      var PAD = 40; // pixels padding
+      var maxCW = A4_W - PAD * 2, maxCH = A4_H - PAD * 2;
+      var scale = Math.min(maxCW / canvas.width, maxCH / canvas.height);
+      var drawW = Math.round(canvas.width * scale);
+      var drawH = Math.round(canvas.height * scale);
+      var drawX = Math.round((A4_W - drawW) / 2);
+      var drawY = Math.round((A4_H - drawH) / 2);
+      a4Ctx.drawImage(canvas, drawX, drawY, drawW, drawH);
+
+      // Thumbnail
       var tw = 480;
-      var th = Math.round(480 * canvas.height / (canvas.width || 1));
+      var th = Math.round(480 * A4_H / A4_W);
       var thumbCanvas = document.createElement('canvas');
       thumbCanvas.width = tw; thumbCanvas.height = th;
-      thumbCanvas.getContext('2d').drawImage(canvas, 0, 0, tw, th);
+      thumbCanvas.getContext('2d').drawImage(a4Canvas, 0, 0, tw, th);
 
       window.ReactNativeWebView.postMessage(JSON.stringify({
         type: 'processed',
-        processed: canvas.toDataURL('image/jpeg', 0.92),
+        processed: a4Canvas.toDataURL('image/jpeg', 0.92),
         thumb: thumbCanvas.toDataURL('image/jpeg', 0.5),
       }));
     }).catch(function(e) {
