@@ -15,6 +15,19 @@ export const PROCESSOR_HTML = `<!DOCTYPE html>
 <head><meta charset="UTF-8"><style>body{margin:0;}</style></head>
 <body>
 <script>
+// ─── A4 fallback corners ──────────────────────────────────────────────────────
+function getA4Fallback(imgW, imgH) {
+  var ratio = 210 / 297; // A4 w/h
+  var pad = 0.04;
+  var maxW = 1 - pad * 2, maxH = 1 - pad * 2;
+  var target = ratio * (imgH / imgW);
+  var cW, cH;
+  if (target <= 1) { cH = maxH; cW = cH * target; if (cW > maxW) { cW = maxW; cH = cW / target; } }
+  else { cW = maxW; cH = cW / target; if (cH > maxH) { cH = maxH; cW = cH * target; } }
+  var x1 = (1 - cW) / 2, y1 = (1 - cH) / 2;
+  return [{x:x1,y:y1},{x:x1+cW,y:y1},{x:x1+cW,y:y1+cH},{x:x1,y:y1+cH}];
+}
+
 // ─── Corner Detection ────────────────────────────────────────────────────────
 function detectDocumentCorners(img) {
   var cw = 400;
@@ -110,14 +123,8 @@ function detectDocumentCorners(img) {
     }
   }
 
-  var pad = 0.08;
   if (rightEdge - leftEdge < cw * 0.25 || bottomEdge - topEdge < ch * 0.25 || edgeCount < 100) {
-    return [
-      {x: pad,   y: pad},
-      {x: 1-pad, y: pad},
-      {x: 1-pad, y: 1-pad},
-      {x: pad,   y: 1-pad},
-    ];
+    return getA4Fallback(img.width, img.height);
   }
 
   var cx = (leftEdge + rightEdge) / 2;

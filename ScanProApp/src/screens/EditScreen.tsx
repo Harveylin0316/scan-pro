@@ -38,10 +38,41 @@ function s2n(sx: number, sy: number, l: ImageLayout): Corner {
   };
 }
 
-const DEFAULT_CORNERS: Corner[] = [
+const FALLBACK_CORNERS: Corner[] = [
   { x: 0.08, y: 0.08 }, { x: 0.92, y: 0.08 },
   { x: 0.92, y: 0.92 }, { x: 0.08, y: 0.92 },
 ];
+
+// Compute centered A4 crop corners based on actual image dimensions
+function getA4Corners(imgW: number, imgH: number): Corner[] {
+  const A4_RATIO = 210 / 297; // width / height ≈ 0.707
+  const PAD = 0.04; // 4% minimum padding on each side
+  const maxW = 1 - PAD * 2;
+  const maxH = 1 - PAD * 2;
+
+  // Target normalized-crop aspect = A4_RATIO * (imgH / imgW)
+  const target = A4_RATIO * (imgH / imgW);
+
+  let cropW: number, cropH: number;
+  if (target <= 1) {
+    cropH = maxH;
+    cropW = cropH * target;
+    if (cropW > maxW) { cropW = maxW; cropH = cropW / target; }
+  } else {
+    cropW = maxW;
+    cropH = cropW / target;
+    if (cropH > maxH) { cropH = maxH; cropW = cropH * target; }
+  }
+
+  const x1 = (1 - cropW) / 2;
+  const y1 = (1 - cropH) / 2;
+  return [
+    { x: x1, y: y1 },
+    { x: x1 + cropW, y: y1 },
+    { x: x1 + cropW, y: y1 + cropH },
+    { x: x1, y: y1 + cropH },
+  ];
+}
 
 type Step = 'crop' | 'adjust';
 
@@ -72,8 +103,10 @@ export default function EditScreen() {
     };
   }, [imgSize, containerDims]);
 
-  // Editing state
-  const [corners, setCorners]       = useState<Corner[]>(existingPage?.corners ?? DEFAULT_CORNERS);
+  // Editing state — use A4 default when image size is known
+  const a4Corners = imgSize ? getA4Corners(imgSize.w, imgSize.h) : FALLBACK_CORNERS;
+  const [corners, setCorners]       = useState<Corner[]>(existingPage?.corners ?? FALLBACK_CORNERS);
+  const a4InitDone = useRef(false);
   const [filter, setFilter]         = useState<Filter>(existingPage?.filter ?? 'scan');
   const [brightness, setBrightness] = useState(existingPage?.brightness ?? 0);
   const [contrast, setContrast]     = useState(existingPage?.contrast ?? 0);
@@ -98,6 +131,14 @@ export default function EditScreen() {
   useEffect(() => {
     Image.getSize(uri, (w, h) => setImgSize({ w, h }), () => setImgSize({ w: 1, h: 1 }));
   }, [uri]);
+
+  // Set A4 corners once when image size loads (new pages only)
+  useEffect(() => {
+    if (imgSize && !existingPage && !a4InitDone.current) {
+      a4InitDone.current = true;
+      setCorners(getA4Corners(imgSize.w, imgSize.h));
+    }
+  }, [imgSize, existingPage]);
 
   // Auto-detect corners
   const runDetect = useCallback(async () => {
@@ -268,7 +309,7 @@ export default function EditScreen() {
         </View>
 
         <View style={styles.cropToolbar}>
-          <TouchableOpacity style={styles.toolbarBtn} onPress={() => setCorners(DEFAULT_CORNERS)}>
+          <TouchableOpacity style={styles.toolbarBtn} onPress={() => setCorners(a4Corners)}>
             <Text style={styles.toolbarBtnText}>重設裁切</Text>
           </TouchableOpacity>
         </View>
