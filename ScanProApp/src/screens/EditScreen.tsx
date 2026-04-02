@@ -112,7 +112,7 @@ export default function EditScreen() {
   const [contrast, setContrast]     = useState(existingPage?.contrast ?? 0);
 
   // UI state
-  const [detecting, setDetecting]           = useState(!existingPage);
+  const detecting = false; // reserved for future use
   const [processing, setProcessing]         = useState(false);
   const [processorReady, setProcessorReady] = useState(false);
 
@@ -140,20 +140,7 @@ export default function EditScreen() {
     }
   }, [imgSize, existingPage]);
 
-  // Auto-detect corners
-  const runDetect = useCallback(async () => {
-    if (!processorReady || existingPage) return;
-    try {
-      setDetecting(true);
-      const dataUrl = await readImageBase64();
-      const result = await processorRef.current!.detect(dataUrl);
-      setCorners(result.corners);
-    } catch { /* keep defaults */ } finally {
-      setDetecting(false);
-    }
-  }, [processorReady, existingPage, readImageBase64]);
-
-  useEffect(() => { runDetect(); }, [runDetect]);
+  // No auto-detect — always use A4 default, user drags to adjust
 
   const onContainerLayout = useCallback((e: any) => {
     const { width, height } = e.nativeEvent.layout;
