@@ -29,7 +29,8 @@ export async function exportToPdf(pages: ScanPage[]): Promise<void> {
     </style>
     </head><body>${imagesHtml}</body></html>`;
 
-  const { uri } = await Print.printToFileAsync({ html, base64: false });
+  // A4 at 72 DPI = 595 × 842 points
+  const { uri } = await Print.printToFileAsync({ html, width: 595, height: 842 });
   await Sharing.shareAsync(uri, {
     mimeType: 'application/pdf',
     dialogTitle: 'ScanPro PDF',
