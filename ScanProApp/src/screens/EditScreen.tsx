@@ -19,7 +19,7 @@ type Nav   = NativeStackNavigationProp<RootStackParamList, 'Edit'>;
 type Route = RouteProp<RootStackParamList, 'Edit'>;
 
 const SCREEN_W = Dimensions.get('window').width;
-const HANDLE_R = 18;
+const HANDLE_R = 20;
 
 type ImageLayout = {
   containerW: number;
@@ -65,7 +65,6 @@ export default function EditScreen() {
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
   const [containerDims, setContainerDims] = useState<{ w: number; h: number } | null>(null);
 
-  // FIX #2: Derive layout from imgSize + containerDims (works regardless of load order)
   const layout = useMemo<ImageLayout | null>(() => {
     if (!imgSize || !containerDims) return null;
     const scale = Math.min(containerDims.w / imgSize.w, containerDims.h / imgSize.h);
@@ -89,8 +88,9 @@ export default function EditScreen() {
   const [detecting, setDetecting]       = useState(!existingPage);
   const [processing, setProcessing]     = useState(false);
   const [processorReady, setProcessorReady] = useState(false);
+  const [scrollEnabled, setScrollEnabled] = useState(true);
 
-  // FIX #5: Cache base64 to avoid double read
+  // Cache base64
   const imageBase64Ref = useRef<string | null>(null);
   const readImageBase64 = useCallback(async () => {
     if (imageBase64Ref.current) return imageBase64Ref.current;
@@ -128,13 +128,12 @@ export default function EditScreen() {
 
   useEffect(() => { runDetect(); }, [runDetect]);
 
-  // ── Container layout ─────────────────────────────────────────────────────────
   const onContainerLayout = useCallback((e: any) => {
     const { width, height } = e.nativeEvent.layout;
     setContainerDims({ w: width, h: height });
   }, []);
 
-  // ── FIX #1: PanResponders — capture start corner via ref, avoid double-accumulation
+  // ── PanResponders with capture phase (beats ScrollView) ──────────────────────
   const cornersRef = useRef(corners);
   cornersRef.current = corners;
 
@@ -144,8 +143,12 @@ export default function EditScreen() {
       return PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
+        // Capture phase — grab gesture BEFORE ScrollView
+        onStartShouldSetPanResponderCapture: () => true,
+        onMoveShouldSetPanResponderCapture: () => true,
         onPanResponderGrant: () => {
-          startCorner = cornersRef.current[idx]; // snapshot at drag start
+          startCorner = cornersRef.current[idx];
+          setScrollEnabled(false); // disable scroll while dragging
         },
         onPanResponderMove: (_, gs) => {
           if (!layout) return;
@@ -156,6 +159,8 @@ export default function EditScreen() {
             return next;
           });
         },
+        onPanResponderRelease: () => setScrollEnabled(true),
+        onPanResponderTerminate: () => setScrollEnabled(true),
       });
     });
   }, [layout]);
@@ -212,7 +217,7 @@ export default function EditScreen() {
     });
   };
 
-  // ── FIX #4: Render crop lines without transformOrigin ────────────────────────
+  // ── Render crop lines ────────────────────────────────────────────────────────
   const renderLines = () => {
     if (!layout) return null;
     const pts = corners.map((c) => normalizedToScreen(c, layout));
@@ -224,22 +229,17 @@ export default function EditScreen() {
       const dy = b.y - a.y;
       const len = Math.hypot(dx, dy);
       const angle = Math.atan2(dy, dx);
-      // Position the center of the line at the midpoint of the two corners.
-      // The line has width = len and height = 2. Default rotation pivot = center.
       const midX = (a.x + b.x) / 2;
       const midY = (a.y + b.y) / 2;
       return (
         <View
           key={i}
-          style={[
-            styles.cropLine,
-            {
-              left: midX - len / 2,
-              top: midY - 1,
-              width: len,
-              transform: [{ rotate: `${angle * 180 / Math.PI}deg` }],
-            },
-          ]}
+          style={[styles.cropLine, {
+            left: midX - len / 2,
+            top: midY - 1,
+            width: len,
+            transform: [{ rotate: `${angle * 180 / Math.PI}deg` }],
+          }]}
         />
       );
     });
@@ -271,11 +271,15 @@ export default function EditScreen() {
         >
           {processing
             ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.confirmBtnText}>✓ 確認</Text>}
+            : <Text style={styles.confirmBtnText}>確認</Text>}
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        scrollEnabled={scrollEnabled}
+      >
         {/* Image + crop overlay */}
         <View style={styles.imageContainer} onLayout={onContainerLayout}>
           <Image source={{ uri }} style={styles.image} resizeMode="contain" />
@@ -356,14 +360,14 @@ const styles = StyleSheet.create({
   backBtnText: { fontSize: 15, color: '#2563eb' },
   headerTitle: { fontSize: 16, fontWeight: '600', color: '#111827' },
   confirmBtn: {
-    backgroundColor: '#2563eb', paddingHorizontal: 16, paddingVertical: 8,
+    backgroundColor: '#2563eb', paddingHorizontal: 20, paddingVertical: 10,
     borderRadius: 8, minWidth: 70, alignItems: 'center',
   },
   confirmBtnDisabled: { backgroundColor: '#93c5fd' },
-  confirmBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  confirmBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 
   scroll: { flex: 1 },
-  scrollContent: { paddingBottom: 32 },
+  scrollContent: { paddingBottom: 40 },
 
   imageContainer: {
     width: SCREEN_W, height: SCREEN_W * 1.3,
