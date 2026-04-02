@@ -132,6 +132,7 @@ export default function EditScreen() {
   const [brightness, setBrightness] = useState(existingPage?.brightness ?? 0);
   const [contrast, setContrast]     = useState(existingPage?.contrast ?? 0);
 
+  const [detecting, setDetecting]            = useState(!existingPage);
   const [processing, setProcessing]         = useState(false);
   const [processorReady, setProcessorReady] = useState(false);
 
@@ -150,12 +151,32 @@ export default function EditScreen() {
     Image.getSize(uri, (w, h) => setImgSize({ w, h }), () => setImgSize({ w: 1, h: 1 }));
   }, [uri]);
 
+  // Set A4 as immediate default, auto-detect will override
   useEffect(() => {
     if (imgSize && !existingPage && !a4InitDone.current) {
       a4InitDone.current = true;
       setCorners(getA4Corners(imgSize.w, imgSize.h));
     }
   }, [imgSize, existingPage]);
+
+  // Auto-detect document edges → override A4 default if found
+  const runDetect = useCallback(async () => {
+    if (!processorReady || existingPage) return;
+    try {
+      setDetecting(true);
+      const dataUrl = await readImageBase64();
+      const result = await processorRef.current!.detect(dataUrl);
+      if (result.corners && result.corners.length === 4) {
+        setCorners(result.corners);
+      }
+    } catch {
+      // keep A4 default
+    } finally {
+      setDetecting(false);
+    }
+  }, [processorReady, existingPage, readImageBase64]);
+
+  useEffect(() => { runDetect(); }, [runDetect]);
 
   const onContainerLayout = useCallback((e: any) => {
     const { width, height } = e.nativeEvent.layout;
@@ -398,13 +419,19 @@ export default function EditScreen() {
 
         <View style={styles.cropArea} onLayout={onContainerLayout}>
           <Image source={{ uri }} style={styles.cropImage} resizeMode="contain" />
-          {layout && (
+          {layout && !detecting && (
             <GestureDetector gesture={panGesture}>
               <View style={StyleSheet.absoluteFill}>
                 {renderCropLines()}
                 {renderHandles()}
               </View>
             </GestureDetector>
+          )}
+          {detecting && (
+            <View style={styles.detectingOverlay}>
+              <ActivityIndicator color="#fff" size="large" />
+              <Text style={styles.detectingTextLight}>偵測文件邊緣...</Text>
+            </View>
           )}
         </View>
 

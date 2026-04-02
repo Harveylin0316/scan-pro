@@ -410,6 +410,139 @@
     .filter-btn { padding: 10px 18px; font-size: 14px; }
     .drop-zone { padding: 32px 16px; }
   }
+
+  /* ===== UX ENHANCEMENTS ===== */
+
+  /* Button press feedback */
+  .btn { transition: all 0.15s, transform 0.08s; }
+  .btn:active:not(:disabled) {
+    transform: scale(0.96);
+    opacity: 0.82;
+  }
+
+  /* Toast type variants */
+  .toast.toast-success { background: #15803d; }
+  .toast.toast-error   { background: #b91c1c; }
+  .toast.toast-warning { background: #b45309; }
+
+  /* Page thumbnail entrance animation */
+  @keyframes pageIn {
+    from { opacity: 0; transform: translateY(10px) scale(0.9); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .page-thumb.entering {
+    animation: pageIn 0.22s ease-out forwards;
+  }
+
+  /* Always show page actions on touch (non-hover) devices */
+  @media (hover: none) {
+    .page-thumb .page-actions { opacity: 1; }
+    .page-action-btn { width: 34px; height: 34px; font-size: 15px; }
+  }
+
+  /* Crop hint text */
+  .crop-hint {
+    text-align: center;
+    font-size: 12px;
+    color: var(--gray-400);
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    user-select: none;
+    pointer-events: none;
+  }
+
+  /* Enhanced empty state */
+  .empty-pages-icon { font-size: 36px; margin-bottom: 10px; }
+  .empty-steps {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    text-align: left;
+  }
+  .empty-step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--gray-400);
+  }
+  .step-dot {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--gray-100);
+    color: var(--gray-500);
+    font-size: 10px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  /* Drop zone format badges */
+  .drop-zone-badges {
+    display: flex;
+    gap: 6px;
+    justify-content: center;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+  .format-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--gray-200);
+    color: var(--gray-500);
+    letter-spacing: 0.4px;
+  }
+
+  /* Camera hint overlay inside modal */
+  .camera-hint {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: linear-gradient(transparent, rgba(0,0,0,0.6));
+    color: rgba(255,255,255,0.9);
+    font-size: 13px;
+    text-align: center;
+    padding: 24px 16px 10px;
+    pointer-events: none;
+  }
+
+  /* editCard fade-in on first appear */
+  @keyframes cardFadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  #editCard {
+    animation: cardFadeIn 0.2s ease;
+  }
+
+  /* Keyboard shortcut hint */
+  .kbd-hint {
+    font-size: 11px;
+    color: var(--gray-400);
+    margin-top: 6px;
+    text-align: center;
+    display: none;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .kbd-hint { display: block; }
+  }
+  kbd {
+    display: inline-block;
+    padding: 1px 5px;
+    font-size: 10px;
+    font-family: inherit;
+    background: var(--gray-100);
+    border: 1px solid var(--gray-300);
+    border-radius: 3px;
+    color: var(--gray-500);
+  }
 </style>
 </head>
 <body>
@@ -427,13 +560,20 @@
         <div class="drop-zone" id="dropZone">
           <div class="icon">📁</div>
           <div class="title">拖放圖片到這裡</div>
-          <div class="subtitle">或點擊選擇檔案（支援 JPG、PNG、iPhone HEIC，單檔最大 15MB）</div>
+          <div class="subtitle">或點擊選擇檔案（單檔最大 15MB）</div>
+          <div class="drop-zone-badges">
+            <span class="format-badge">JPG</span>
+            <span class="format-badge">PNG</span>
+            <span class="format-badge">HEIC</span>
+            <span class="format-badge">HEIF</span>
+          </div>
         </div>
         <input type="file" id="fileInput" accept="image/*,.heic,.heif" multiple class="hidden">
         <div class="btn-row">
-          <button class="btn btn-primary" id="btnCamera">📷 拍照</button>
-          <button class="btn btn-secondary" id="btnUpload">📂 選擇檔案</button>
+          <button class="btn btn-primary" id="btnCamera" aria-label="開啟相機拍照">📷 拍照</button>
+          <button class="btn btn-secondary" id="btnUpload" aria-label="從裝置選擇圖片檔案">📂 選擇檔案</button>
         </div>
+        <div class="kbd-hint">拖曳圖片到此處 · 支援同時選取多張</div>
       </div>
     </div>
 
@@ -441,8 +581,8 @@
       <div class="card-header">
         <span>✏️ 編輯掃描頁 <span id="editingPageNum"></span></span>
         <div style="display:flex;gap:8px;">
-          <button class="btn btn-sm btn-secondary" id="btnResetCrop">重設裁切</button>
-          <button class="btn btn-sm btn-primary" id="btnApplyEdit">✓ 確認</button>
+          <button class="btn btn-sm btn-secondary" id="btnResetCrop" aria-label="重設裁切角點至自動偵測位置">↺ 重設裁切</button>
+          <button class="btn btn-sm btn-primary" id="btnApplyEdit" aria-label="套用目前的編輯設定">✓ 套用</button>
         </div>
       </div>
       <div class="card-body" style="padding:12px;">
@@ -458,6 +598,7 @@
             <div style="font-size:14px;color:var(--gray-500);">處理中...</div>
           </div>
         </div>
+        <div class="crop-hint" id="cropHint">✦ 拖動四角白點以調整裁切範圍</div>
 
         <div style="margin-top:16px;">
           <div style="font-size:13px;font-weight:600;color:var(--gray-600);margin-bottom:8px;">掃描模式</div>
@@ -486,15 +627,21 @@
     </div>
     <div class="pages-list" id="pagesList">
       <div class="empty-pages" id="emptyPages">
-        還沒有掃描頁<br>拍照或上傳圖片開始
+        <div class="empty-pages-icon">📄</div>
+        <div>還沒有掃描頁面</div>
+        <div class="empty-steps">
+          <div class="empty-step"><span class="step-dot">1</span><span>拍照或上傳圖片</span></div>
+          <div class="empty-step"><span class="step-dot">2</span><span>調整裁切與掃描模式</span></div>
+          <div class="empty-step"><span class="step-dot">3</span><span>輸出 PDF 或圖片檔</span></div>
+        </div>
       </div>
     </div>
     <div class="export-section">
       <div style="display:flex;gap:8px;margin-bottom:8px;">
-        <button class="btn btn-secondary" id="btnExportImages" disabled style="flex:1;">
+        <button class="btn btn-secondary" id="btnExportImages" disabled style="flex:1;" aria-label="將所有掃描頁輸出為圖片">
           🖼️ 輸出圖檔
         </button>
-        <button class="btn btn-success" id="btnExportPdf" disabled style="flex:1;">
+        <button class="btn btn-success" id="btnExportPdf" disabled style="flex:1;" aria-label="將所有掃描頁合併為 PDF">
           📥 輸出 PDF
         </button>
       </div>
@@ -511,8 +658,9 @@
       <h3>📷 拍照掃描</h3>
       <button class="btn btn-icon btn-secondary" id="btnCloseCamera">✕</button>
     </div>
-    <div class="modal-body">
+    <div class="modal-body" style="position:relative;">
       <video id="cameraVideo" autoplay playsinline></video>
+      <div class="camera-hint">對準文件，保持平穩後按「拍攝」</div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" id="btnSwitchCamera">🔄 切換鏡頭</button>
@@ -590,8 +738,10 @@ const App = (() => {
   }
 
   let toastTimer = null;
-  function showToast(msg, duration = 2500) {
+  function showToast(msg, duration = 2500, type = '') {
     el.toast.textContent = msg;
+    // Reset type classes then apply new type
+    el.toast.className = 'toast' + (type ? ' toast-' + type : '');
     el.toast.classList.add('show');
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(() => el.toast.classList.remove('show'), duration);
@@ -992,11 +1142,11 @@ const App = (() => {
     const isImage = file.type.startsWith('image/');
     const isHeicFile = isHeic(file);
     if (!isImage && !isHeicFile) {
-      showToast('只支援圖片格式（JPG、PNG、HEIC）');
+      showToast('只支援圖片格式（JPG、PNG、HEIC）', 3500, 'error');
       return false;
     }
     if (file.size > MAX_FILE_SIZE) {
-      showToast(`檔案太大（${(file.size/1024/1024).toFixed(1)}MB），上限 ${MAX_FILE_SIZE/1024/1024}MB`);
+      showToast(`檔案太大（${(file.size/1024/1024).toFixed(1)}MB），上限 ${MAX_FILE_SIZE/1024/1024}MB`, 3500, 'error');
       return false;
     }
     return true;
@@ -1015,7 +1165,7 @@ const App = (() => {
         c.height = nativeImg.height;
         c.getContext('2d').drawImage(nativeImg, 0, 0);
         imgSrc = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
-        showToast('HEIC 已轉換');
+        showToast('HEIC 已轉換', 2000, 'success');
       } catch(nativeErr) {
         console.log('Native HEIC failed, trying heic2any...', nativeErr.message);
         try {
@@ -1024,7 +1174,7 @@ const App = (() => {
         } catch(libErr) {
           console.error('All HEIC conversion methods failed:', libErr);
           showProcessing(false);
-          showToast('HEIC 轉換失敗。建議：先用 iPhone「照片」app 把 HEIC 轉成 JPG 再上傳');
+          showToast('HEIC 轉換失敗。建議：先用 iPhone「照片」app 把 HEIC 轉成 JPG 再上傳', 5000, 'error');
           return;
         }
       }
@@ -1051,10 +1201,26 @@ const App = (() => {
       state.pages.push(page);
       renderPagesList();
       selectPage(id);
-      showToast(`已新增第 ${state.pages.length} 頁`);
+
+      // Entrance animation for new page thumbnail
+      const newThumb = el.pagesList.querySelector(`[data-id="${id}"]`);
+      if (newThumb) {
+        newThumb.classList.add('entering');
+        newThumb.addEventListener('animationend', () => newThumb.classList.remove('entering'), { once: true });
+      }
+
+      // On mobile, scroll edit area into view so user sees it immediately
+      if (window.innerWidth <= 768) {
+        const editCard = el.editCard;
+        if (editCard) {
+          setTimeout(() => editCard.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
+        }
+      }
+
+      showToast(`已新增第 ${state.pages.length} 頁`, 2000, 'success');
     } catch(e) {
       console.error('Error processing image:', e);
-      showToast('處理圖片時發生錯誤');
+      showToast('處理圖片時發生錯誤', 3500, 'error');
     }
     showProcessing(false);
   }
@@ -1072,7 +1238,7 @@ const App = (() => {
       }
     }
     renderPagesList();
-    showToast('已刪除頁面');
+    showToast('已刪除頁面', 2000);
   }
 
   function selectPage(id) {
@@ -1179,6 +1345,22 @@ const App = (() => {
 
     el.emptyPages.classList.toggle('hidden', state.pages.length > 0);
     el.pageCount.textContent = `${state.pages.length} 頁`;
+
+    // Show drag-to-reorder hint in sidebar header when 2+ pages (desktop only)
+    const hintId = 'dragReorderHint';
+    let existingHint = document.getElementById(hintId);
+    if (state.pages.length >= 2) {
+      if (!existingHint) {
+        const hint = document.createElement('div');
+        hint.id = hintId;
+        hint.className = 'kbd-hint';
+        hint.style.marginBottom = '4px';
+        hint.textContent = '可拖曳縮圖以調整頁面順序';
+        el.pagesList.parentNode.insertBefore(hint, el.pagesList);
+      }
+    } else if (existingHint) {
+      existingHint.remove();
+    }
     el.btnExportPdf.disabled = state.pages.length === 0;
     el.btnExportImages.disabled = state.pages.length === 0;
 
@@ -1317,7 +1499,7 @@ const App = (() => {
 
   async function openCamera() {
     if (cameraPermissionDenied) {
-      showToast('相機權限被拒絕，請在瀏覽器設定中允許');
+      showToast('相機權限被拒絕，請在瀏覽器設定中允許', 4000, 'error');
       return;
     }
     try {
@@ -1330,11 +1512,11 @@ const App = (() => {
     } catch(e) {
       if (e.name === 'NotAllowedError') {
         cameraPermissionDenied = true;
-        showToast('相機權限被拒絕，請在瀏覽器設定中允許');
+        showToast('相機權限被拒絕，請在瀏覽器設定中允許', 4000, 'error');
       } else if (e.name === 'NotFoundError') {
-        showToast('未找到可用的相機設備');
+        showToast('未找到可用的相機設備', 3500, 'warning');
       } else {
-        showToast('無法存取相機：' + e.message);
+        showToast('無法存取相機：' + e.message, 3500, 'error');
       }
     }
   }
@@ -1380,7 +1562,9 @@ const App = (() => {
   async function exportPdf() {
     if (state.pages.length === 0) return;
     showToast('正在生成 PDF...', 10000);
+    const pdfBtnOriginal = el.btnExportPdf.innerHTML;
     el.btnExportPdf.disabled = true;
+    el.btnExportPdf.innerHTML = '⏳ 生成中...';
     el.exportProgress.classList.remove('hidden');
     el.exportProgressFill.style.width = '0%';
 
@@ -1443,13 +1627,14 @@ const App = (() => {
         downloadBlob(blob, filename);
       }
 
-      showToast(`PDF 已下載（${total} 頁）`);
+      showToast(`PDF 已下載（${total} 頁）`, 2500, 'success');
     } catch(e) {
       console.error('PDF export error:', e);
-      showToast('PDF 生成失敗');
+      showToast('PDF 生成失敗', 3500, 'error');
     }
 
     el.btnExportPdf.disabled = state.pages.length === 0;
+    el.btnExportPdf.innerHTML = pdfBtnOriginal;
     el.btnExportImages.disabled = state.pages.length === 0;
     el.exportProgress.classList.add('hidden');
   }
@@ -1480,7 +1665,9 @@ const App = (() => {
   async function exportImages() {
     if (state.pages.length === 0) return;
     const total = state.pages.length;
+    const imgBtnOriginal = el.btnExportImages.innerHTML;
     el.btnExportImages.disabled = true;
+    el.btnExportImages.innerHTML = '⏳ 輸出中...';
     el.btnExportPdf.disabled = true;
     showToast(total === 1 ? '正在輸出圖片...' : `正在輸出 ${total} 張圖片...`, 10000);
 
@@ -1530,12 +1717,13 @@ const App = (() => {
         }
       }
 
-      showToast(validPages.length === 1 ? '圖片已下載' : `${validPages.length} 張圖片已下載`);
+      showToast(validPages.length === 1 ? '圖片已下載' : `${validPages.length} 張圖片已下載`, 2500, 'success');
     } catch(e) {
       console.error('Image export error:', e);
-      showToast('圖片輸出失敗');
+      showToast('圖片輸出失敗', 3500, 'error');
     } finally {
       el.btnExportImages.disabled = state.pages.length === 0;
+      el.btnExportImages.innerHTML = imgBtnOriginal;
       el.btnExportPdf.disabled = state.pages.length === 0;
     }
   }
@@ -1602,12 +1790,13 @@ const App = (() => {
 
     el.btnClearAll.onclick = () => {
       if (state.pages.length === 0) return;
-      if (confirm('確定要清除所有頁面？')) {
+      const count = state.pages.length;
+      if (confirm(`確定要清除全部 ${count} 頁？此動作無法復原。`)) {
         state.pages = [];
         state.activePageId = null;
         el.editCard.style.display = 'none';
         renderPagesList();
-        showToast('已清除所有頁面');
+        showToast(`已清除 ${count} 頁`, 2000);
       }
     };
 
